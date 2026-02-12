@@ -4,7 +4,7 @@
   import { negotiateCaps } from '$lib/irc/cap';
   import { authenticateSASL } from '$lib/irc/sasl';
   import { registerHandler } from '$lib/irc/handler';
-  import { join, chathistory } from '$lib/irc/commands';
+  import { join, chathistory, markread } from '$lib/irc/commands';
   import { getCredentials, getToken } from '$lib/api/auth';
   import { connectToVoice, disconnectVoice } from '$lib/voice/room';
   import { voiceState } from '$lib/state/voice.svelte';
@@ -21,6 +21,8 @@
     setActiveChannel,
     setCategories,
   } from '$lib/state/channels.svelte';
+  import { markRead } from '$lib/state/notifications.svelte';
+  import { getCursors } from '$lib/state/messages.svelte';
   import { addServer, getActiveServer } from '$lib/state/servers.svelte';
   import ServerList from '../../components/ServerList.svelte';
   import ChannelSidebar from '../../components/ChannelSidebar.svelte';
@@ -44,6 +46,35 @@
   let voiceRoom: Room | null = null;
   let showMembers = $state(true);
   let error: string | null = $state(null);
+
+  /**
+   * Effect: when active channel changes, mark it read and sync via MARKREAD.
+   * - Resets local unread/mention counts.
+   * - Sends MARKREAD to the server with the newest message timestamp (or queries if none).
+   */
+  let prevActiveChannel: string | null = null;
+  $effect(() => {
+    const channel = channelUIState.activeChannel;
+    if (!channel || channel === prevActiveChannel) return;
+    prevActiveChannel = channel;
+
+    // Mark channel as read locally
+    const cursors = getCursors(channel);
+    if (cursors.newestMsgid) {
+      markRead(channel, cursors.newestMsgid);
+    }
+
+    // Sync read position via IRC MARKREAD
+    if (conn) {
+      if (cursors.newestMsgid) {
+        // We have messages — set read marker to newest
+        markread(conn, channel, new Date().toISOString());
+      } else {
+        // No messages yet — query current read position from server
+        markread(conn, channel);
+      }
+    }
+  });
 
   function toggleMembers(): void {
     showMembers = !showMembers;

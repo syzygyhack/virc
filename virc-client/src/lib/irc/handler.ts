@@ -24,7 +24,7 @@ import {
 } from '../state/channels.svelte';
 import { setOnline, setOffline } from '../state/presence.svelte';
 import { getActiveChannel } from '../state/channels.svelte';
-import { incrementUnread } from '../state/notifications.svelte';
+import { incrementUnread, setLastReadMsgid } from '../state/notifications.svelte';
 import { userState } from '../state/user.svelte';
 
 /**
@@ -187,6 +187,9 @@ export function handleMessage(parsed: ParsedMessage): void {
 		case '366': // RPL_ENDOFNAMES
 			handleEndOfNames(parsed);
 			break;
+		case 'MARKREAD':
+			handleMarkread(parsed);
+			break;
 		case '730': // RPL_MONONLINE
 			handleMonitorOnline(parsed);
 			break;
@@ -314,6 +317,26 @@ function finalizeBatch(batch: BatchState): void {
 	if (batch.type === 'chathistory' && batch.target && batch.messages.length > 0) {
 		// CHATHISTORY results are prepended (they're historical)
 		prependMessages(batch.target, batch.messages);
+	}
+}
+
+/**
+ * Handle MARKREAD response from the server.
+ * Format: `MARKREAD <target> timestamp=<ts>`
+ * Sets the last read message ID from the server-reported position.
+ */
+function handleMarkread(parsed: ParsedMessage): void {
+	const target = parsed.params[0];
+	if (!target) return;
+
+	// Look for timestamp= param to extract the read position.
+	// Server may reply with a timestamp param; we store it as the lastReadMsgid.
+	const timestampParam = parsed.params.find((p) => p.startsWith('timestamp='));
+	if (timestampParam) {
+		const ts = timestampParam.slice('timestamp='.length);
+		if (ts) {
+			setLastReadMsgid(target, ts);
+		}
 	}
 }
 

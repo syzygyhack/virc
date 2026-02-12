@@ -4,8 +4,11 @@
   import { negotiateCaps } from '$lib/irc/cap';
   import { authenticateSASL } from '$lib/irc/sasl';
   import { registerHandler } from '$lib/irc/handler';
-  import { join } from '$lib/irc/commands';
+  import { join, chathistory } from '$lib/irc/commands';
   import { getCredentials, getToken } from '$lib/api/auth';
+  import { connectToVoice, disconnectVoice } from '$lib/voice/room';
+  import { voiceState } from '$lib/state/voice.svelte';
+  import type { Room } from 'livekit-client';
   import {
     setConnecting,
     setConnected,
@@ -22,6 +25,7 @@
   import ServerList from '../../components/ServerList.svelte';
   import ChannelSidebar from '../../components/ChannelSidebar.svelte';
   import HeaderBar from '../../components/HeaderBar.svelte';
+  import MessageList from '../../components/MessageList.svelte';
 
   /** virc.json config shape (subset we consume). */
   interface VircConfig {
@@ -37,11 +41,81 @@
   }
 
   let conn: IRCConnection | null = null;
+  let voiceRoom: Room | null = null;
   let showMembers = $state(true);
   let error: string | null = $state(null);
 
   function toggleMembers(): void {
     showMembers = !showMembers;
+  }
+
+  function handleLoadHistory(target: string, beforeMsgid: string): void {
+    if (!conn) return;
+    chathistory(conn, 'BEFORE', target, `msgid=${beforeMsgid}`, '50');
+  }
+
+  /**
+   * Handle a voice channel click: request mic permission, fetch a
+   * LiveKit token, connect to the room, and JOIN the IRC channel.
+   */
+  async function handleVoiceChannelClick(channel: string): Promise<void> {
+    // If already in this channel, disconnect instead (toggle behavior).
+    if (voiceState.currentRoom === channel && voiceRoom) {
+      await disconnectVoice(voiceRoom);
+      voiceRoom = null;
+      // PART the IRC voice channel for presence.
+      if (conn) {
+        conn.send(`PART ${channel}`);
+      }
+      return;
+    }
+
+    // If connected to a different voice channel, disconnect first.
+    if (voiceRoom) {
+      const prevChannel = voiceState.currentRoom;
+      await disconnectVoice(voiceRoom);
+      voiceRoom = null;
+      if (conn && prevChannel) {
+        conn.send(`PART ${prevChannel}`);
+      }
+    }
+
+    try {
+      // 1. Request microphone permission.
+      await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      // 2. Fetch LiveKit token from virc-files.
+      const server = getActiveServer();
+      if (!server) throw new Error('No active server');
+
+      const jwt = getToken();
+      if (!jwt) throw new Error('Not authenticated');
+
+      const res = await fetch(`${server.filesUrl}/api/livekit/token`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${jwt}`,
+        },
+        body: JSON.stringify({ channel }),
+      });
+
+      if (!res.ok) {
+        throw new Error(`Failed to get voice token (${res.status})`);
+      }
+
+      const data = (await res.json()) as { token: string; url: string };
+
+      // 3. Connect to the LiveKit room.
+      voiceRoom = await connectToVoice(channel, data.url, data.token);
+
+      // 4. JOIN the IRC voice channel for presence.
+      if (conn) {
+        join(conn, [channel]);
+      }
+    } catch (e) {
+      console.error('Voice connection failed:', e);
+    }
   }
 
   /**
@@ -142,6 +216,12 @@
   });
 
   onDestroy(() => {
+    // Clean up voice connection.
+    if (voiceRoom) {
+      disconnectVoice(voiceRoom).catch(() => {});
+      voiceRoom = null;
+    }
+
     if (conn) {
       try {
         conn.disconnect();
@@ -157,7 +237,7 @@
   <!-- Left column: Server list + Channel sidebar -->
   <div class="left-panel">
     <ServerList />
-    <ChannelSidebar />
+    <ChannelSidebar onVoiceChannelClick={handleVoiceChannelClick} />
   </div>
 
   <!-- Center column: Header + Messages + Input -->
@@ -178,9 +258,7 @@
           <p>Select a channel to start chatting</p>
         </div>
       {:else}
-        <div class="placeholder-messages">
-          <!-- MessageArea will be built in a subsequent task -->
-        </div>
+        <MessageList onloadhistory={handleLoadHistory} />
       {/if}
     </div>
 
@@ -234,9 +312,10 @@
 
   .message-area {
     flex: 1;
-    overflow-y: auto;
+    overflow: hidden;
     display: flex;
     flex-direction: column;
+    position: relative;
   }
 
   .message-input-area {
@@ -287,10 +366,6 @@
     justify-content: center;
     color: var(--text-muted);
     font-size: var(--font-md);
-  }
-
-  .placeholder-messages {
-    flex: 1;
   }
 
   /* Input placeholder */

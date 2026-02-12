@@ -6,9 +6,20 @@
     type ChannelCategory,
   } from '$lib/state/channels.svelte';
   import { getActiveServer } from '$lib/state/servers.svelte';
+  import { voiceState } from '$lib/state/voice.svelte';
 
-  function handleChannelClick(name: string): void {
-    setActiveChannel(name);
+  interface Props {
+    onVoiceChannelClick?: (channel: string) => void;
+  }
+
+  let { onVoiceChannelClick }: Props = $props();
+
+  function handleChannelClick(name: string, isVoice: boolean): void {
+    if (isVoice) {
+      onVoiceChannelClick?.(name);
+    } else {
+      setActiveChannel(name);
+    }
   }
 
   function handleCategoryClick(cat: ChannelCategory): void {
@@ -35,7 +46,7 @@
             <button
               class="channel-item"
               class:active={channelUIState.activeChannel === dm.nick}
-              onclick={() => handleChannelClick(dm.nick)}
+              onclick={() => handleChannelClick(dm.nick, false)}
             >
               <span class="channel-icon dm-icon">@</span>
               <span class="channel-name">{dm.nick}</span>
@@ -70,8 +81,9 @@
             {#each cat.channels as ch (ch)}
               <button
                 class="channel-item"
-                class:active={channelUIState.activeChannel === ch}
-                onclick={() => handleChannelClick(ch)}
+                class:active={!cat.voice && channelUIState.activeChannel === ch}
+                class:voice-connected={cat.voice && voiceState.currentRoom === ch}
+                onclick={() => handleChannelClick(ch, !!cat.voice)}
               >
                 {#if cat.voice}
                   <svg class="channel-icon voice-icon" width="14" height="14" viewBox="0 0 16 16">
@@ -203,6 +215,12 @@
   .channel-item.active {
     background: var(--accent-bg);
     color: var(--text-primary);
+    font-weight: var(--weight-medium);
+  }
+
+  .channel-item.voice-connected {
+    background: rgba(59, 165, 93, 0.12);
+    color: var(--success, #3ba55d);
     font-weight: var(--weight-medium);
   }
 

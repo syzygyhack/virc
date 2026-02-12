@@ -1,0 +1,151 @@
+import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+import {
+	voiceState,
+	setConnected,
+	setDisconnected,
+	toggleMute,
+	toggleDeafen,
+	updateParticipant,
+	removeParticipant,
+} from './voice.svelte';
+
+describe('voiceState', () => {
+	beforeEach(() => {
+		vi.useFakeTimers();
+		// Reset to clean state before each test.
+		setDisconnected();
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	it('starts disconnected with empty state', () => {
+		expect(voiceState.isConnected).toBe(false);
+		expect(voiceState.currentRoom).toBeNull();
+		expect(voiceState.participants.size).toBe(0);
+		expect(voiceState.localMuted).toBe(false);
+		expect(voiceState.localDeafened).toBe(false);
+		expect(voiceState.connectDuration).toBe(0);
+	});
+
+	it('setConnected() marks as connected and starts duration counter', () => {
+		setConnected('#voice');
+
+		expect(voiceState.isConnected).toBe(true);
+		expect(voiceState.currentRoom).toBe('#voice');
+		expect(voiceState.connectDuration).toBe(0);
+
+		// Advance 3 seconds and check duration.
+		vi.advanceTimersByTime(3000);
+		expect(voiceState.connectDuration).toBe(3);
+	});
+
+	it('setDisconnected() resets all state and stops duration counter', () => {
+		setConnected('#voice');
+		updateParticipant('alice', { isSpeaking: true });
+		voiceState.localMuted = true;
+
+		vi.advanceTimersByTime(2000);
+		expect(voiceState.connectDuration).toBe(2);
+
+		setDisconnected();
+
+		expect(voiceState.isConnected).toBe(false);
+		expect(voiceState.currentRoom).toBeNull();
+		expect(voiceState.participants.size).toBe(0);
+		expect(voiceState.localMuted).toBe(false);
+		expect(voiceState.localDeafened).toBe(false);
+		expect(voiceState.connectDuration).toBe(0);
+
+		// Duration counter should be stopped.
+		vi.advanceTimersByTime(5000);
+		expect(voiceState.connectDuration).toBe(0);
+	});
+
+	it('setConnected() clears existing participants', () => {
+		setConnected('#voice-1');
+		updateParticipant('alice', {});
+
+		setConnected('#voice-2');
+		expect(voiceState.participants.size).toBe(0);
+		expect(voiceState.currentRoom).toBe('#voice-2');
+	});
+
+	it('toggleMute() toggles local mute state', () => {
+		expect(voiceState.localMuted).toBe(false);
+
+		toggleMute();
+		expect(voiceState.localMuted).toBe(true);
+
+		toggleMute();
+		expect(voiceState.localMuted).toBe(false);
+	});
+
+	it('toggleDeafen() deafens and also mutes', () => {
+		expect(voiceState.localDeafened).toBe(false);
+		expect(voiceState.localMuted).toBe(false);
+
+		toggleDeafen();
+		expect(voiceState.localDeafened).toBe(true);
+		expect(voiceState.localMuted).toBe(true);
+	});
+
+	it('toggleDeafen() un-deafens without changing mute state', () => {
+		toggleDeafen(); // deafen + mute
+		expect(voiceState.localDeafened).toBe(true);
+		expect(voiceState.localMuted).toBe(true);
+
+		toggleDeafen(); // un-deafen
+		expect(voiceState.localDeafened).toBe(false);
+		// localMuted stays true because toggleDeafen only sets it on deafen
+		expect(voiceState.localMuted).toBe(true);
+	});
+
+	it('updateParticipant() adds a new participant with defaults', () => {
+		updateParticipant('alice', {});
+
+		const p = voiceState.participants.get('alice');
+		expect(p).toBeDefined();
+		expect(p!.nick).toBe('alice');
+		expect(p!.isSpeaking).toBe(false);
+		expect(p!.isMuted).toBe(false);
+		expect(p!.isDeafened).toBe(false);
+	});
+
+	it('updateParticipant() adds a new participant with specified state', () => {
+		updateParticipant('bob', { isSpeaking: true, isMuted: true });
+
+		const p = voiceState.participants.get('bob');
+		expect(p).toBeDefined();
+		expect(p!.isSpeaking).toBe(true);
+		expect(p!.isMuted).toBe(true);
+		expect(p!.isDeafened).toBe(false);
+	});
+
+	it('updateParticipant() updates an existing participant partially', () => {
+		updateParticipant('alice', { isSpeaking: false, isMuted: false });
+		updateParticipant('alice', { isSpeaking: true });
+
+		const p = voiceState.participants.get('alice');
+		expect(p!.isSpeaking).toBe(true);
+		expect(p!.isMuted).toBe(false); // unchanged
+	});
+
+	it('removeParticipant() removes a participant', () => {
+		updateParticipant('alice', {});
+		updateParticipant('bob', {});
+		expect(voiceState.participants.size).toBe(2);
+
+		removeParticipant('alice');
+		expect(voiceState.participants.size).toBe(1);
+		expect(voiceState.participants.has('alice')).toBe(false);
+		expect(voiceState.participants.has('bob')).toBe(true);
+	});
+
+	it('removeParticipant() is a no-op for unknown nick', () => {
+		updateParticipant('alice', {});
+		removeParticipant('unknown');
+		expect(voiceState.participants.size).toBe(1);
+	});
+});

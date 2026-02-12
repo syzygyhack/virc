@@ -10,17 +10,72 @@
 		text: string;
 	}
 
+	import { onMount, onDestroy } from 'svelte';
+
 	interface Props {
 		target: string;
 		connection: IRCConnection | null;
 		reply?: ReplyContext | null;
 		oncancelreply?: () => void;
+		oneditlast?: () => void;
+		disconnected?: boolean;
+		rateLimitSeconds?: number;
 	}
 
-	let { target, connection, reply = null, oncancelreply }: Props = $props();
+	let { target, connection, reply = null, oncancelreply, oneditlast, disconnected = false, rateLimitSeconds = 0 }: Props = $props();
 
 	let text = $state('');
 	let textarea: HTMLTextAreaElement | undefined = $state();
+
+	let inputDisabled = $derived(disconnected || rateLimitSeconds > 0);
+
+	// Listen for programmatic edit-message events (from keyboard shortcut: Up arrow)
+	function handleEditMessage(e: Event): void {
+		const detail = (e as CustomEvent<{ text: string }>).detail;
+		if (detail?.text) {
+			text = detail.text;
+			requestAnimationFrame(() => {
+				adjustHeight();
+				textarea?.focus();
+				// Place cursor at end
+				if (textarea) {
+					textarea.selectionStart = textarea.selectionEnd = text.length;
+				}
+			});
+		}
+	}
+
+	// Listen for mention insertion events (from MemberList context menu)
+	function handleInsertMention(e: Event): void {
+		const detail = (e as CustomEvent<{ nick: string }>).detail;
+		if (detail?.nick) {
+			const mention = `@${detail.nick} `;
+			text += mention;
+			requestAnimationFrame(() => {
+				adjustHeight();
+				textarea?.focus();
+				if (textarea) {
+					textarea.selectionStart = textarea.selectionEnd = text.length;
+				}
+			});
+		}
+	}
+
+	onMount(() => {
+		window.addEventListener('virc:edit-message', handleEditMessage);
+		window.addEventListener('virc:insert-mention', handleInsertMention);
+	});
+
+	onDestroy(() => {
+		window.removeEventListener('virc:edit-message', handleEditMessage);
+		window.removeEventListener('virc:insert-mention', handleInsertMention);
+	});
+
+	let statusMessage = $derived(() => {
+		if (disconnected) return "You're offline. Reconnecting...";
+		if (rateLimitSeconds > 0) return `Slow down! You can send another message in ${rateLimitSeconds}s.`;
+		return null;
+	});
 
 	// --- Auto-growing textarea ---
 
@@ -143,7 +198,7 @@
 
 	function send(): void {
 		const trimmed = text.trim();
-		if (!trimmed || !connection) return;
+		if (!trimmed || !connection || inputDisabled) return;
 
 		// Check for slash commands
 		if (trimmed.startsWith('/')) {
@@ -207,6 +262,15 @@
 			return;
 		}
 
+		// Up arrow in empty input — edit last message
+		if (event.key === 'ArrowUp' && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
+			if (text.trim() === '') {
+				event.preventDefault();
+				oneditlast?.();
+				return;
+			}
+		}
+
 		// Escape cancels reply
 		if (event.key === 'Escape' && reply) {
 			event.preventDefault();
@@ -237,6 +301,12 @@
 </script>
 
 <div class="message-input-container">
+	{#if statusMessage()}
+		<div class="input-status-bar" class:input-status-warning={rateLimitSeconds > 0} class:input-status-offline={disconnected}>
+			{statusMessage()}
+		</div>
+	{/if}
+
 	{#if reply}
 		<div class="reply-bar">
 			<span class="reply-label">
@@ -253,12 +323,13 @@
 		</div>
 	{/if}
 
-	<div class="input-row">
+	<div class="input-row" class:input-disabled={inputDisabled}>
 		<textarea
 			bind:this={textarea}
 			bind:value={text}
-			{placeholder}
+			placeholder={inputDisabled ? '' : placeholder}
 			rows="1"
+			disabled={inputDisabled}
 			onkeydown={handleKeydown}
 			oninput={handleInput}
 		></textarea>
@@ -350,5 +421,43 @@
 
 	textarea::placeholder {
 		color: var(--text-muted);
+	}
+
+	textarea:disabled {
+		cursor: not-allowed;
+		opacity: 0.5;
+	}
+
+	/* Input status bar */
+	.input-status-bar {
+		padding: 6px 12px;
+		font-size: var(--font-xs);
+		font-weight: var(--weight-medium);
+		border-radius: 8px 8px 0 0;
+		text-align: center;
+	}
+
+	.input-status-offline {
+		background: rgba(224, 64, 64, 0.12);
+		color: var(--danger);
+	}
+
+	.input-status-warning {
+		background: rgba(240, 178, 50, 0.12);
+		color: var(--warning);
+	}
+
+	.input-status-bar + .reply-bar {
+		border-radius: 0;
+	}
+
+	.input-status-bar + .input-row,
+	.input-status-bar + .reply-bar + .input-row {
+		border-radius: 0 0 8px 8px;
+		border-top: 1px solid var(--surface-highest);
+	}
+
+	.input-disabled {
+		opacity: 0.6;
 	}
 </style>

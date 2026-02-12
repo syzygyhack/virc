@@ -4,10 +4,10 @@
   import { negotiateCaps } from '$lib/irc/cap';
   import { authenticateSASL } from '$lib/irc/sasl';
   import { registerHandler } from '$lib/irc/handler';
-  import { join, chathistory, markread, tagmsg, redact } from '$lib/irc/commands';
-  import { getCredentials, getToken } from '$lib/api/auth';
+  import { join, chathistory, markread, tagmsg, redact, privmsg } from '$lib/irc/commands';
+  import { getCredentials, getToken, fetchToken, startTokenRefresh, stopTokenRefresh } from '$lib/api/auth';
   import { connectToVoice, disconnectVoice } from '$lib/voice/room';
-  import { voiceState } from '$lib/state/voice.svelte';
+  import { voiceState, toggleMute, toggleDeafen } from '$lib/state/voice.svelte';
   import type { Room } from 'livekit-client';
   import {
     setConnecting,
@@ -22,16 +22,22 @@
     setCategories,
   } from '$lib/state/channels.svelte';
   import { markRead } from '$lib/state/notifications.svelte';
-  import { getCursors, getMessage, getMessages, redactMessage, addReaction, removeReaction } from '$lib/state/messages.svelte';
+  import { getUnreadCount } from '$lib/state/notifications.svelte';
+  import { getCursors, getMessage, getMessages, redactMessage, addReaction, removeReaction, updateSendState, addMessage } from '$lib/state/messages.svelte';
   import type { Message } from '$lib/state/messages.svelte';
   import { addServer, getActiveServer } from '$lib/state/servers.svelte';
+  import { installGlobalHandler, registerKeybindings } from '$lib/keybindings';
   import ServerList from '../../components/ServerList.svelte';
   import ChannelSidebar from '../../components/ChannelSidebar.svelte';
   import HeaderBar from '../../components/HeaderBar.svelte';
   import MessageList from '../../components/MessageList.svelte';
   import MessageInput from '../../components/MessageInput.svelte';
+  import MemberList from '../../components/MemberList.svelte';
   import TypingIndicator from '../../components/TypingIndicator.svelte';
   import EmojiPicker from '../../components/EmojiPicker.svelte';
+  import QuickSwitcher from '../../components/QuickSwitcher.svelte';
+  import AuthExpiredModal from '../../components/AuthExpiredModal.svelte';
+  import ErrorBoundary from '../../components/ErrorBoundary.svelte';
 
   /** virc.json config shape (subset we consume). */
   interface VircConfig {
@@ -65,6 +71,21 @@
 
   // Delete confirmation state
   let deleteTarget: { msgid: string; channel: string } | null = $state(null);
+
+  // Quick switcher state
+  let showQuickSwitcher = $state(false);
+
+  // Auth expiry state
+  let authExpired = $state(false);
+
+  // Rate limit state
+  let rateLimitSeconds = $state(0);
+  let rateLimitTimer: ReturnType<typeof setInterval> | null = null;
+
+  // Derived disconnect state for MessageInput
+  let isDisconnected = $derived(
+    connectionState.status === 'disconnected' || connectionState.status === 'reconnecting'
+  );
 
   /**
    * Effect: when active channel changes, mark it read and sync via MARKREAD.
@@ -182,6 +203,38 @@
 
   function handleCancelDelete(): void {
     deleteTarget = null;
+  }
+
+  /** Retry sending a failed message. */
+  function handleRetry(msgid: string): void {
+    const channel = channelUIState.activeChannel;
+    if (!channel || !conn) return;
+    const msg = getMessage(channel, msgid);
+    if (!msg || msg.sendState !== 'failed') return;
+
+    updateSendState(channel, msgid, 'sending');
+    try {
+      privmsg(conn, channel, msg.text);
+      updateSendState(channel, msgid, 'sent');
+    } catch {
+      updateSendState(channel, msgid, 'failed');
+    }
+  }
+
+  /** Start a rate limit countdown timer. */
+  function startRateLimit(seconds: number): void {
+    rateLimitSeconds = seconds;
+    if (rateLimitTimer) clearInterval(rateLimitTimer);
+    rateLimitTimer = setInterval(() => {
+      rateLimitSeconds--;
+      if (rateLimitSeconds <= 0) {
+        rateLimitSeconds = 0;
+        if (rateLimitTimer) {
+          clearInterval(rateLimitTimer);
+          rateLimitTimer = null;
+        }
+      }
+    }, 1000);
   }
 
   /**
@@ -302,6 +355,17 @@
       // 4. SASL authentication
       await authenticateSASL(conn, creds.account, creds.password);
 
+      // 4b. Fetch initial JWT and start refresh loop with auth expiry detection
+      try {
+        await fetchToken(filesUrl, creds.account, creds.password);
+        startTokenRefresh(filesUrl, () => {
+          authExpired = true;
+        });
+      } catch {
+        // JWT fetch failure at startup is not fatal — file uploads won't work
+        // but chat still functions. Auth expiry modal fires on refresh failure.
+      }
+
       // 5. Fetch virc.json
       const config = await fetchVircConfig(filesUrl);
 
@@ -341,11 +405,239 @@
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Channel navigation helpers
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Get the flat, ordered list of text channels (non-voice) from categories.
+   * Used for Alt+Up/Down navigation.
+   */
+  function getTextChannelList(): string[] {
+    const channels: string[] = [];
+    for (const dm of channelUIState.dmConversations) {
+      channels.push(dm.nick);
+    }
+    for (const cat of channelUIState.categories) {
+      if (cat.voice) continue;
+      for (const ch of cat.channels) {
+        channels.push(ch);
+      }
+    }
+    return channels;
+  }
+
+  /** Navigate to the next or previous channel in the sidebar. */
+  function navigateChannel(direction: 1 | -1): void {
+    const channels = getTextChannelList();
+    if (channels.length === 0) return;
+    const current = channelUIState.activeChannel;
+    const idx = current ? channels.indexOf(current) : -1;
+    let next: number;
+    if (idx === -1) {
+      next = direction === 1 ? 0 : channels.length - 1;
+    } else {
+      next = (idx + direction + channels.length) % channels.length;
+    }
+    setActiveChannel(channels[next]);
+  }
+
+  /** Navigate to the next or previous unread channel. */
+  function navigateUnreadChannel(direction: 1 | -1): void {
+    const channels = getTextChannelList();
+    if (channels.length === 0) return;
+    const current = channelUIState.activeChannel;
+    const idx = current ? channels.indexOf(current) : -1;
+    const start = idx === -1 ? 0 : idx;
+
+    // Search in the given direction for an unread channel
+    for (let i = 1; i <= channels.length; i++) {
+      const checkIdx = (start + i * direction + channels.length) % channels.length;
+      if (getUnreadCount(channels[checkIdx]) > 0) {
+        setActiveChannel(channels[checkIdx]);
+        return;
+      }
+    }
+  }
+
+  /**
+   * "Edit" the last message by the current user:
+   * For MVP, populate the input with the last message text (delete + retype).
+   */
+  function editLastMessage(): void {
+    const channel = channelUIState.activeChannel;
+    if (!channel) return;
+    const nick = userState.nick;
+    if (!nick) return;
+
+    const msgs = getMessages(channel);
+    // Find the last non-redacted privmsg by the current user
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      const m = msgs[i];
+      if (m.nick === nick && m.type === 'privmsg' && !m.isRedacted) {
+        // Delete the original via REDACT and populate input
+        if (conn) {
+          redact(conn, channel, m.msgid);
+          redactMessage(channel, m.msgid);
+        }
+        // Set the input textarea value by dispatching a custom event
+        // The MessageInput component will pick this up
+        window.dispatchEvent(
+          new CustomEvent('virc:edit-message', { detail: { text: m.text } })
+        );
+        return;
+      }
+    }
+  }
+
+  /** Insert @nick mention into the message input via custom event. */
+  function handleMemberMention(nick: string): void {
+    window.dispatchEvent(
+      new CustomEvent('virc:insert-mention', { detail: { nick } })
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Keyboard shortcuts
+  // ---------------------------------------------------------------------------
+
+  let cleanupKeybindings: (() => void) | null = null;
+  let cleanupGlobalHandler: (() => void) | null = null;
+
+  function setupKeybindings(): void {
+    cleanupGlobalHandler = installGlobalHandler();
+
+    cleanupKeybindings = registerKeybindings([
+      // Ctrl+K — Quick switcher
+      {
+        key: 'k',
+        ctrl: true,
+        handler: () => {
+          showQuickSwitcher = !showQuickSwitcher;
+          return true;
+        },
+        description: 'Open quick channel switcher',
+      },
+      // Alt+ArrowUp — Previous channel
+      {
+        key: 'ArrowUp',
+        alt: true,
+        handler: () => {
+          navigateChannel(-1);
+          return true;
+        },
+        description: 'Navigate to previous channel',
+      },
+      // Alt+ArrowDown — Next channel
+      {
+        key: 'ArrowDown',
+        alt: true,
+        handler: () => {
+          navigateChannel(1);
+          return true;
+        },
+        description: 'Navigate to next channel',
+      },
+      // Alt+Shift+ArrowUp — Previous unread channel
+      {
+        key: 'ArrowUp',
+        alt: true,
+        shift: true,
+        handler: () => {
+          navigateUnreadChannel(-1);
+          return true;
+        },
+        description: 'Navigate to previous unread channel',
+      },
+      // Alt+Shift+ArrowDown — Next unread channel
+      {
+        key: 'ArrowDown',
+        alt: true,
+        shift: true,
+        handler: () => {
+          navigateUnreadChannel(1);
+          return true;
+        },
+        description: 'Navigate to next unread channel',
+      },
+      // Escape — Close modals, cancel reply, close emoji picker
+      {
+        key: 'Escape',
+        handler: () => {
+          if (showQuickSwitcher) {
+            showQuickSwitcher = false;
+            return true;
+          }
+          if (deleteTarget) {
+            deleteTarget = null;
+            return true;
+          }
+          if (emojiPickerTarget) {
+            emojiPickerTarget = null;
+            emojiPickerPosition = null;
+            return true;
+          }
+          if (replyContext) {
+            replyContext = null;
+            return true;
+          }
+          // Don't prevent default if nothing to close
+          return false;
+        },
+        description: 'Close modal / cancel reply / close emoji picker',
+      },
+      // Ctrl+Shift+M — Toggle voice mute
+      {
+        key: 'M',
+        ctrl: true,
+        shift: true,
+        handler: () => {
+          if (voiceState.isConnected) {
+            toggleMute();
+            return true;
+          }
+          return false;
+        },
+        description: 'Toggle voice mute',
+      },
+      // Ctrl+Shift+D — Toggle voice deafen
+      {
+        key: 'D',
+        ctrl: true,
+        shift: true,
+        handler: () => {
+          if (voiceState.isConnected) {
+            toggleDeafen();
+            return true;
+          }
+          return false;
+        },
+        description: 'Toggle voice deafen',
+      },
+    ]);
+  }
+
+  function teardownKeybindings(): void {
+    cleanupKeybindings?.();
+    cleanupGlobalHandler?.();
+    cleanupKeybindings = null;
+    cleanupGlobalHandler = null;
+  }
+
   onMount(() => {
+    setupKeybindings();
     initConnection();
   });
 
   onDestroy(() => {
+    teardownKeybindings();
+    stopTokenRefresh();
+
+    if (rateLimitTimer) {
+      clearInterval(rateLimitTimer);
+      rateLimitTimer = null;
+    }
+
     // Clean up voice connection.
     if (voiceRoom) {
       disconnectVoice(voiceRoom).catch(() => {});
@@ -372,30 +664,39 @@
 
   <!-- Center column: Header + Messages + Input -->
   <div class="center-panel">
-    <HeaderBar onToggleMembers={toggleMembers} />
+    <HeaderBar onToggleMembers={toggleMembers} membersVisible={showMembers} />
 
     <div class="message-area">
-      {#if error}
-        <div class="error-banner">
-          <span>Connection error: {error}</span>
-        </div>
-      {:else if connectionState.status === 'connecting'}
-        <div class="status-banner">Connecting...</div>
-      {:else if connectionState.status === 'reconnecting'}
-        <div class="status-banner reconnecting">Reconnecting...</div>
-      {:else if !channelUIState.activeChannel}
-        <div class="empty-state">
-          <p>Select a channel to start chatting</p>
-        </div>
-      {:else}
-        <MessageList
-          onloadhistory={handleLoadHistory}
-          onreply={handleReply}
-          onreact={handleReact}
-          onmore={handleMore}
-          ontogglereaction={handleToggleReaction}
-        />
-      {/if}
+      <ErrorBoundary>
+        {#if error}
+          <div class="error-banner">
+            <span>Connection error: {error}</span>
+          </div>
+        {:else if connectionState.status === 'connecting'}
+          <div class="splash-screen">
+            <div class="splash-spinner"></div>
+            <span class="splash-text">Connecting to server...</span>
+          </div>
+        {:else if connectionState.status === 'reconnecting'}
+          <div class="splash-screen reconnecting">
+            <div class="splash-spinner"></div>
+            <span class="splash-text">Reconnecting...</span>
+          </div>
+        {:else if !channelUIState.activeChannel}
+          <div class="empty-state">
+            <p>Select a channel to start chatting</p>
+          </div>
+        {:else}
+          <MessageList
+            onloadhistory={handleLoadHistory}
+            onreply={handleReply}
+            onreact={handleReact}
+            onmore={handleMore}
+            ontogglereaction={handleToggleReaction}
+            onretry={handleRetry}
+          />
+        {/if}
+      </ErrorBoundary>
     </div>
 
     {#if channelUIState.activeChannel}
@@ -405,6 +706,9 @@
         connection={conn}
         reply={replyContext}
         oncancelreply={handleCancelReply}
+        oneditlast={editLastMessage}
+        disconnected={isDisconnected}
+        {rateLimitSeconds}
       />
     {:else}
       <div class="message-input-area">
@@ -418,13 +722,15 @@
   <!-- Right column: Member list -->
   {#if showMembers}
     <div class="right-panel">
-      <!-- MemberList will be built in a subsequent task -->
-      <div class="member-placeholder">
-        <span class="member-placeholder-title">Members</span>
-      </div>
+      <MemberList onmention={handleMemberMention} />
     </div>
   {/if}
 </div>
+
+<!-- Quick Switcher modal -->
+{#if showQuickSwitcher}
+  <QuickSwitcher onclose={() => (showQuickSwitcher = false)} />
+{/if}
 
 <!-- Emoji Picker overlay -->
 {#if emojiPickerTarget && emojiPickerPosition}
@@ -456,6 +762,9 @@
     </div>
   </div>
 {/if}
+
+<!-- Auth expiry modal -->
+<AuthExpiredModal visible={authExpired} />
 
 <style>
   .chat-layout {
@@ -502,6 +811,13 @@
     overflow-y: auto;
   }
 
+  /* Hide member list below 1200px per FRONTEND.md responsive spec */
+  @media (max-width: 1200px) {
+    .right-panel {
+      display: none;
+    }
+  }
+
   /* Status banners */
   .error-banner {
     display: flex;
@@ -514,19 +830,36 @@
     font-weight: var(--weight-medium);
   }
 
-  .status-banner {
+  /* Branded splash screen for initial connection */
+  .splash-screen {
+    flex: 1;
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 8px 16px;
-    background: var(--accent-bg);
-    color: var(--text-secondary);
-    font-size: var(--font-sm);
+    gap: 16px;
   }
 
-  .status-banner.reconnecting {
-    background: rgba(240, 178, 50, 0.12);
+  .splash-screen.reconnecting .splash-text {
     color: var(--warning);
+  }
+
+  .splash-spinner {
+    width: 32px;
+    height: 32px;
+    border: 3px solid var(--surface-high);
+    border-top-color: var(--accent-primary);
+    border-radius: 50%;
+    animation: splash-spin 0.8s linear infinite;
+  }
+
+  .splash-text {
+    color: var(--text-secondary);
+    font-size: var(--font-base);
+  }
+
+  @keyframes splash-spin {
+    to { transform: rotate(360deg); }
   }
 
   .empty-state {
@@ -551,19 +884,6 @@
   .input-placeholder-text {
     color: var(--text-muted);
     font-size: var(--font-base);
-  }
-
-  /* Member list placeholder */
-  .member-placeholder {
-    padding: 16px;
-  }
-
-  .member-placeholder-title {
-    font-size: var(--font-xs);
-    font-weight: var(--weight-semibold);
-    color: var(--text-secondary);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
   }
 
   /* Emoji picker overlay */

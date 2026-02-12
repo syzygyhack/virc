@@ -9,6 +9,7 @@ build/
 # Environment files
 .env
 .env.*
+!.env.example
 *.local
 
 # OS files
@@ -17,6 +18,9 @@ build/
 # Data volumes
 ergo-data/
 mysql-data/
+
+# Uploads
+uploads/
 
 # Certificates
 *.pem

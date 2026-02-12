@@ -17,6 +17,11 @@ import {
 	isOnline,
 	resetPresence,
 } from '../state/presence.svelte';
+import {
+	getMember,
+	getMembers,
+	resetMembers,
+} from '../state/members.svelte';
 import type { IRCConnection } from './connection';
 
 /** Parse a raw IRC line and pass it through the handler. */
@@ -29,6 +34,7 @@ beforeEach(() => {
 	resetMessages();
 	resetChannels();
 	resetPresence();
+	resetMembers();
 	resetHandlerState();
 	vi.useFakeTimers();
 });
@@ -295,5 +301,187 @@ describe('cursor tracking through handler', () => {
 		const c = getCursors('#test');
 		expect(c.oldestMsgid).toBe('first');
 		expect(c.newestMsgid).toBe('third');
+	});
+});
+
+// -----------------------------------------------------------------------
+// Member state (members.svelte.ts) integration via handler
+// -----------------------------------------------------------------------
+
+describe('NAMES (353) -> member state', () => {
+	it('populates member state from NAMES with multi-prefix and userhost-in-names', () => {
+		handle(':server 353 me = #test :@+op!user@host +voice!v@host regular!r@host');
+		const op = getMember('#test', 'op');
+		expect(op).not.toBeNull();
+		expect(op!.modes).toEqual(['@', '+']);
+		expect(op!.highestMode).toBe('@');
+
+		const voice = getMember('#test', 'voice');
+		expect(voice).not.toBeNull();
+		expect(voice!.modes).toEqual(['+']);
+		expect(voice!.highestMode).toBe('+');
+
+		const reg = getMember('#test', 'regular');
+		expect(reg).not.toBeNull();
+		expect(reg!.modes).toEqual([]);
+		expect(reg!.highestMode).toBeNull();
+	});
+
+	it('populates member state from simple NAMES', () => {
+		handle(':server 353 me = #test :@op +voice regular');
+		expect(getMember('#test', 'op')?.highestMode).toBe('@');
+		expect(getMember('#test', 'voice')?.highestMode).toBe('+');
+		expect(getMember('#test', 'regular')?.highestMode).toBeNull();
+	});
+});
+
+describe('WHO (352/354) -> member state', () => {
+	it('handles 352 WHO reply to set account and away status', () => {
+		// First populate via NAMES so the member exists
+		handle(':server 353 me = #test :alice');
+		handle(':server 366 me #test :End of /NAMES list');
+
+		// 352: server 352 me #channel user host server nick H/G[*][@+] :hopcount realname
+		// H = here, G = gone (away)
+		handle(':server 352 me #test auser ahost server alice H :0 Alice Real');
+		const m = getMember('#test', 'alice');
+		expect(m).not.toBeNull();
+		expect(m!.account).toBe('');
+		expect(m!.isAway).toBe(false);
+	});
+
+	it('handles 352 WHO reply with away status (G)', () => {
+		handle(':server 353 me = #test :alice');
+		handle(':server 366 me #test :End of /NAMES list');
+		handle(':server 352 me #test auser ahost server alice G :0 Alice');
+		const m = getMember('#test', 'alice');
+		expect(m!.isAway).toBe(true);
+		expect(m!.presence).toBe('idle');
+	});
+
+	it('handles 354 WHOX reply with account field', () => {
+		handle(':server 353 me = #test :@alice');
+		handle(':server 366 me #test :End of /NAMES list');
+
+		// 354: server 354 me <token> <user> <host> <nick> <flags> <account>
+		// Token 152 is a common WHOX token for our format
+		handle(':server 354 me 152 auser ahost alice H alice_acct');
+		const m = getMember('#test', 'alice');
+		expect(m).not.toBeNull();
+		expect(m!.account).toBe('alice_acct');
+		expect(m!.isAway).toBe(false);
+	});
+
+	it('handles 354 WHOX with 0 account (not logged in)', () => {
+		handle(':server 353 me = #test :bob');
+		handle(':server 366 me #test :End of /NAMES list');
+		handle(':server 354 me 152 buser bhost bob H 0');
+		const m = getMember('#test', 'bob');
+		expect(m!.account).toBe('');
+	});
+
+	it('handles 354 WHOX with away flag', () => {
+		handle(':server 353 me = #test :carol');
+		handle(':server 366 me #test :End of /NAMES list');
+		handle(':server 354 me 152 cuser chost carol G carol_acct');
+		const m = getMember('#test', 'carol');
+		expect(m!.isAway).toBe(true);
+		expect(m!.presence).toBe('idle');
+	});
+});
+
+describe('AWAY handling -> member state', () => {
+	it('updates presence when user goes away', () => {
+		handle(':server 353 me = #test :alice');
+		handle(':server 366 me #test :End of /NAMES list');
+		handle(':alice!a@host AWAY :Gone fishing');
+		const m = getMember('#test', 'alice');
+		expect(m!.isAway).toBe(true);
+		expect(m!.awayReason).toBe('Gone fishing');
+		expect(m!.presence).toBe('idle');
+	});
+
+	it('updates presence when user returns from away', () => {
+		handle(':server 353 me = #test :alice');
+		handle(':server 366 me #test :End of /NAMES list');
+		handle(':alice!a@host AWAY :Gone fishing');
+		handle(':alice!a@host AWAY');
+		const m = getMember('#test', 'alice');
+		expect(m!.isAway).toBe(false);
+		expect(m!.awayReason).toBeNull();
+		expect(m!.presence).toBe('online');
+	});
+
+	it('detects DND from [DND] prefix in AWAY reason', () => {
+		handle(':server 353 me = #test :alice');
+		handle(':server 366 me #test :End of /NAMES list');
+		handle(':alice!a@host AWAY :[DND] Do not disturb');
+		const m = getMember('#test', 'alice');
+		expect(m!.presence).toBe('dnd');
+		expect(m!.awayReason).toBe('[DND] Do not disturb');
+	});
+});
+
+describe('JOIN (extended-join) -> member state', () => {
+	it('adds member to member state on JOIN', () => {
+		handle(':alice!a@host JOIN #test alice :Alice Real');
+		const m = getMember('#test', 'alice');
+		expect(m).not.toBeNull();
+		expect(m!.nick).toBe('alice');
+		expect(m!.account).toBe('alice');
+		expect(m!.modes).toEqual([]);
+		expect(m!.highestMode).toBeNull();
+		expect(m!.presence).toBe('online');
+	});
+
+	it('uses account tag if no extended-join params', () => {
+		handle('@account=bob :bob!b@host JOIN #test');
+		const m = getMember('#test', 'bob');
+		expect(m).not.toBeNull();
+	});
+});
+
+describe('PART -> member state', () => {
+	it('removes member from member state on PART', () => {
+		handle(':alice!a@host JOIN #test alice :Alice');
+		expect(getMember('#test', 'alice')).not.toBeNull();
+		handle(':alice!a@host PART #test :bye');
+		expect(getMember('#test', 'alice')).toBeNull();
+	});
+});
+
+describe('QUIT -> member state', () => {
+	it('removes member from all channels in member state on QUIT', () => {
+		handle(':alice!a@host JOIN #test alice :Alice');
+		handle(':alice!a@host JOIN #other alice :Alice');
+		handle(':alice!a@host QUIT :connection reset');
+		expect(getMember('#test', 'alice')).toBeNull();
+		expect(getMember('#other', 'alice')).toBeNull();
+	});
+});
+
+describe('MONITOR -> member presence', () => {
+	it('sets member presence to online on RPL_MONONLINE (730)', () => {
+		handle(':alice!a@host JOIN #test alice :Alice');
+		// Simulate going offline first
+		handle(':server 731 me :alice!a@host');
+		expect(getMember('#test', 'alice')?.presence).toBe('offline');
+
+		handle(':server 730 me :alice!a@host');
+		expect(getMember('#test', 'alice')?.presence).toBe('online');
+	});
+
+	it('sets member presence to offline on RPL_MONOFFLINE (731)', () => {
+		handle(':alice!a@host JOIN #test alice :Alice');
+		handle(':server 731 me :alice!a@host');
+		expect(getMember('#test', 'alice')?.presence).toBe('offline');
+	});
+
+	it('handles multiple nicks in MONITOR response', () => {
+		handle(':alice!a@host JOIN #test alice :Alice');
+		handle(':bob!b@host JOIN #test bob :Bob');
+		handle(':server 731 me :alice!a@host,bob!b@host');
+		expect(getMember('#test', 'alice')?.presence).toBe('offline');
+		expect(getMember('#test', 'bob')?.presence).toBe('offline');
 	});
 });

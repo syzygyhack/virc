@@ -7,6 +7,8 @@
 
 const MAX_MESSAGES_PER_CHANNEL = 500;
 
+export type MessageType = 'privmsg' | 'join' | 'part' | 'quit';
+
 export interface Message {
 	msgid: string;
 	nick: string;
@@ -18,6 +20,7 @@ export interface Message {
 	replyTo?: string; // msgid of parent
 	reactions: Map<string, Set<string>>; // emoji -> set of accounts
 	isRedacted: boolean;
+	type: MessageType;
 }
 
 interface ChannelCursors {

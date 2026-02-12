@@ -79,8 +79,10 @@
 				const withinWindow =
 					msg.time.getTime() - prev.time.getTime() < GROUPING_WINDOW_MS;
 				const isReply = !!msg.replyTo;
+				const isSystem = msg.type !== 'privmsg';
+				const prevIsSystem = prev.type !== 'privmsg';
 
-				if (sameAuthor && withinWindow && !isReply) {
+				if (sameAuthor && withinWindow && !isReply && !isSystem && !prevIsSystem) {
 					isGrouped = true;
 					isFirstInGroup = false;
 				}
@@ -224,18 +226,27 @@
 		{#if firstUnreadMsgid() === entry.message.msgid}
 			<UnreadDivider />
 		{/if}
-		<div data-msgid={entry.message.msgid}>
-			<MessageComponent
-				message={entry.message}
-				isGrouped={entry.isGrouped}
-				isFirstInGroup={entry.isFirstInGroup}
-				{onreply}
-				{onreact}
-				{onmore}
-				{ontogglereaction}
-				onscrolltomessage={handleScrollToMessage}
-			/>
-		</div>
+		{#if entry.message.type === 'join' || entry.message.type === 'part' || entry.message.type === 'quit'}
+			<div class="system-message" data-msgid={entry.message.msgid}>
+				<span class="system-icon">
+					{#if entry.message.type === 'join'}&#8594;{:else}&#8592;{/if}
+				</span>
+				<span class="system-text">{entry.message.text}</span>
+			</div>
+		{:else}
+			<div data-msgid={entry.message.msgid}>
+				<MessageComponent
+					message={entry.message}
+					isGrouped={entry.isGrouped}
+					isFirstInGroup={entry.isFirstInGroup}
+					{onreply}
+					{onreact}
+					{onmore}
+					{ontogglereaction}
+					onscrolltomessage={handleScrollToMessage}
+				/>
+			</div>
+		{/if}
 	{/each}
 </div>
 
@@ -315,6 +326,26 @@
 	@keyframes skeleton-pulse {
 		0%, 100% { opacity: 0.4; }
 		50% { opacity: 0.8; }
+	}
+
+	/* System messages (join/part/quit) */
+	.system-message {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 2px 72px;
+		font-size: var(--font-sm);
+		color: var(--text-muted);
+	}
+
+	.system-icon {
+		flex-shrink: 0;
+		font-size: var(--font-sm);
+		line-height: 1;
+	}
+
+	.system-text {
+		line-height: 1.375;
 	}
 
 	/* Jump to Present pill */

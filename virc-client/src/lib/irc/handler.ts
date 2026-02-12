@@ -14,11 +14,13 @@ import {
 	removeReaction,
 	prependMessages,
 	type Message,
+	type MessageType,
 } from '../state/messages.svelte';
 import {
 	addMember,
 	removeMember,
 	removeMemberFromAll,
+	getChannelsForNick,
 	setTopic,
 	setNamesLoaded,
 } from '../state/channels.svelte';
@@ -26,6 +28,15 @@ import { setOnline, setOffline } from '../state/presence.svelte';
 import { getActiveChannel } from '../state/channels.svelte';
 import { incrementUnread, setLastReadMsgid } from '../state/notifications.svelte';
 import { userState } from '../state/user.svelte';
+import {
+	memberState as richMemberState,
+	addMember as addRichMember,
+	removeMember as removeRichMember,
+	removeMemberFromAll as removeRichMemberFromAll,
+	updatePresence,
+	setPresenceOffline,
+	getMember as getRichMember,
+} from '../state/members.svelte';
 
 /**
  * Active batches keyed by batch reference tag.
@@ -109,20 +120,45 @@ function privmsgToMessage(parsed: ParsedMessage, target: string): Message {
 		replyTo,
 		reactions: new Map(),
 		isRedacted: false,
+		type: 'privmsg',
+	};
+}
+
+/** Counter for generating unique msgids for system messages. */
+let systemMsgCounter = 0;
+
+/**
+ * Build a system Message (JOIN/PART/QUIT).
+ */
+function systemMessage(type: MessageType, target: string, nick: string, text: string, parsed: ParsedMessage): Message {
+	const time = parsed.tags['time'] ? new Date(parsed.tags['time']) : new Date();
+	return {
+		msgid: parsed.tags['msgid'] ?? `_sys_${type}_${++systemMsgCounter}`,
+		nick,
+		account: parsed.tags['account'] ?? '',
+		target,
+		text,
+		time,
+		tags: parsed.tags,
+		reactions: new Map(),
+		isRedacted: false,
+		type,
 	};
 }
 
 /**
  * Parse NAMES reply prefixes. Strips mode prefix chars (@, +, %, ~, &)
- * and returns the nick and its prefix string.
+ * and returns the nick, its prefix string, and individual mode chars.
  */
-function parseNamesEntry(entry: string): { nick: string; prefix: string } {
+function parseNamesEntry(entry: string): { nick: string; prefix: string; modes: string[] } {
 	let prefix = '';
+	const modes: string[] = [];
 	let i = 0;
 	const prefixChars = '@+%~&';
 
 	while (i < entry.length && prefixChars.includes(entry[i])) {
 		prefix += entry[i];
+		modes.push(entry[i]);
 		i++;
 	}
 
@@ -131,7 +167,18 @@ function parseNamesEntry(entry: string): { nick: string; prefix: string } {
 	const bangIdx = rest.indexOf('!');
 	const nick = bangIdx !== -1 ? rest.slice(0, bangIdx) : rest;
 
-	return { nick, prefix };
+	return { nick, prefix, modes };
+}
+
+/** Mode prefix precedence for computing highest mode. */
+const MODE_PRECEDENCE = ['~', '&', '@', '%', '+'];
+
+/** Compute the highest mode from an array of mode prefixes. */
+function computeHighestMode(modes: string[]): string | null {
+	for (const mode of MODE_PRECEDENCE) {
+		if (modes.includes(mode)) return mode;
+	}
+	return null;
 }
 
 /**
@@ -189,6 +236,15 @@ export function handleMessage(parsed: ParsedMessage): void {
 			break;
 		case 'MARKREAD':
 			handleMarkread(parsed);
+			break;
+		case '352': // RPL_WHOREPLY
+			handleWhoReply(parsed);
+			break;
+		case '354': // RPL_WHOSPCRPL (WHOX)
+			handleWhoxReply(parsed);
+			break;
+		case 'AWAY':
+			handleAway(parsed);
 			break;
 		case '730': // RPL_MONONLINE
 			handleMonitorOnline(parsed);
@@ -262,17 +318,50 @@ function handleJoin(parsed: ParsedMessage): void {
 	// extended-join provides account and realname as additional params
 	const account = parsed.params[1] ?? parsed.tags['account'] ?? '';
 	addMember(channel, nick, account);
+
+	// Also add to rich member state
+	addRichMember(channel, {
+		nick,
+		account,
+		modes: [],
+		highestMode: null,
+		isAway: false,
+		awayReason: null,
+		presence: 'online',
+	});
+
+	// Add system message to channel buffer
+	const msg = systemMessage('join', channel, nick, `${nick} has joined ${channel}`, parsed);
+	addMessage(channel, msg);
 }
 
 function handlePart(parsed: ParsedMessage): void {
 	const channel = parsed.params[0];
 	const nick = parsed.source?.nick ?? '';
 	removeMember(channel, nick);
+	removeRichMember(channel, nick);
+
+	// Add system message to channel buffer
+	const reason = parsed.params[1] ? ` (${parsed.params[1]})` : '';
+	const msg = systemMessage('part', channel, nick, `${nick} has left ${channel}${reason}`, parsed);
+	addMessage(channel, msg);
 }
 
 function handleQuit(parsed: ParsedMessage): void {
 	const nick = parsed.source?.nick ?? '';
+	const reason = parsed.params[0] ? ` (${parsed.params[0]})` : '';
+
+	// Find channels this nick was in before removing
+	const channelsWithNick = getChannelsForNick(nick);
+
 	removeMemberFromAll(nick);
+	removeRichMemberFromAll(nick);
+
+	// Add system message to each channel the user was in
+	for (const channel of channelsWithNick) {
+		const msg = systemMessage('quit', channel, nick, `${nick} has quit${reason}`, parsed);
+		addMessage(channel, msg);
+	}
 }
 
 function handleTopic(parsed: ParsedMessage): void {
@@ -350,9 +439,19 @@ function handleNamesReply(parsed: ParsedMessage): void {
 
 	const entries = namesStr.trim().split(/\s+/).filter(Boolean);
 	for (const entry of entries) {
-		const { nick, prefix } = parseNamesEntry(entry);
+		const { nick, prefix, modes } = parseNamesEntry(entry);
 		if (nick) {
 			addMember(channel, nick, '', prefix);
+			// Also populate rich member state
+			addRichMember(channel, {
+				nick,
+				account: '',
+				modes,
+				highestMode: computeHighestMode(modes),
+				isAway: false,
+				awayReason: null,
+				presence: 'online',
+			});
 		}
 	}
 }
@@ -370,6 +469,10 @@ function handleMonitorOnline(parsed: ParsedMessage): void {
 	const nickList = parsed.params[parsed.params.length - 1] ?? '';
 	const nicks = parseMonitorNicks(nickList);
 	setOnline(nicks);
+	// Also update rich member presence
+	for (const nick of nicks) {
+		updatePresence(nick, false);
+	}
 }
 
 function handleMonitorOffline(parsed: ParsedMessage): void {
@@ -377,6 +480,75 @@ function handleMonitorOffline(parsed: ParsedMessage): void {
 	const nickList = parsed.params[parsed.params.length - 1] ?? '';
 	const nicks = parseMonitorNicks(nickList);
 	setOffline(nicks);
+	// Also update rich member presence to offline
+	for (const nick of nicks) {
+		setPresenceOffline(nick);
+	}
+}
+
+/**
+ * Handle WHO reply (352).
+ * :server 352 me #channel user host server nick H/G[*][@+] :hopcount realname
+ */
+function handleWhoReply(parsed: ParsedMessage): void {
+	// params: [me, channel, user, host, server, nick, flags, :hopcount realname]
+	const channel = parsed.params[1];
+	const nick = parsed.params[5];
+	const flags = parsed.params[6] ?? '';
+	if (!channel || !nick) return;
+
+	const isAway = flags.startsWith('G');
+	const member = getRichMember(channel, nick);
+	if (member) {
+		member.isAway = isAway;
+		if (isAway) {
+			member.presence = 'idle';
+		} else {
+			member.presence = 'online';
+		}
+	}
+}
+
+/**
+ * Handle WHOX reply (354).
+ * :server 354 me <token> <user> <host> <nick> <flags> <account>
+ */
+function handleWhoxReply(parsed: ParsedMessage): void {
+	// params: [me, token, user, host, nick, flags, account]
+	const nick = parsed.params[4];
+	const flags = parsed.params[5] ?? '';
+	const account = parsed.params[6] ?? '';
+	if (!nick) return;
+
+	const isAway = flags.startsWith('G');
+	const resolvedAccount = account === '0' ? '' : account;
+
+	// Update member across all channels where they appear
+	for (const map of richMemberState.channels.values()) {
+		const member = map.get(nick);
+		if (member) {
+			member.account = resolvedAccount;
+			member.isAway = isAway;
+			member.presence = isAway ? 'idle' : 'online';
+		}
+	}
+}
+
+/**
+ * Handle AWAY (away-notify cap).
+ * :nick!user@host AWAY :reason  — user is away
+ * :nick!user@host AWAY          — user is back
+ */
+function handleAway(parsed: ParsedMessage): void {
+	const nick = parsed.source?.nick ?? '';
+	if (!nick) return;
+
+	const reason = parsed.params[0] ?? '';
+	if (reason) {
+		updatePresence(nick, true, reason);
+	} else {
+		updatePresence(nick, false);
+	}
 }
 
 /**

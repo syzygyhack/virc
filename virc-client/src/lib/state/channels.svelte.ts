@@ -65,6 +65,17 @@ export function removeMemberFromAll(nick: string): void {
 	}
 }
 
+/** Get all channel names where a nick is a member. */
+export function getChannelsForNick(nick: string): string[] {
+	const channels: string[] = [];
+	for (const ch of channelState.channels.values()) {
+		if (ch.members.has(nick)) {
+			channels.push(ch.name);
+		}
+	}
+	return channels;
+}
+
 /** Set the topic for a channel. */
 export function setTopic(channel: string, topic: string): void {
 	const ch = ensureChannel(channel);

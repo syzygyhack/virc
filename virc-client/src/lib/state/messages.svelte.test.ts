@@ -26,6 +26,7 @@ function makeMessage(overrides: Partial<Message> = {}): Message {
 		replyTo: overrides.replyTo,
 		reactions: overrides.reactions ?? new Map(),
 		isRedacted: overrides.isRedacted ?? false,
+		type: overrides.type ?? 'privmsg',
 	};
 }
 

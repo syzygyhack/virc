@@ -59,8 +59,17 @@
 
   let conn: IRCConnection | null = null;
   let voiceRoom: Room | null = $state(null);
-  let showMembers = $state(true);
+  let showMembers = $state(false);
+  let showSidebar = $state(false);
+  let innerWidth = $state(0);
   let error: string | null = $state(null);
+
+  // Responsive breakpoints
+  let isDesktop = $derived(innerWidth > 1200);
+  let isTablet = $derived(innerWidth > 900 && innerWidth <= 1200);
+  let isNarrow = $derived(innerWidth > 600 && innerWidth <= 900);
+  let isMobile = $derived(innerWidth <= 600);
+  let sidebarIsOverlay = $derived(innerWidth <= 900);
 
   // Reply state
   interface ReplyContext {
@@ -136,6 +145,16 @@
 
   function toggleMembers(): void {
     showMembers = !showMembers;
+  }
+
+  function toggleSidebar(): void {
+    showSidebar = !showSidebar;
+  }
+
+  /** Close overlay panels when clicking outside them. */
+  function handleOverlayClick(): void {
+    if (showSidebar && sidebarIsOverlay) showSidebar = false;
+    if (showMembers && !isDesktop) showMembers = false;
   }
 
   function handleLoadHistory(target: string, beforeMsgid: string): void {
@@ -684,6 +703,15 @@
             replyContext = null;
             return true;
           }
+          // Close responsive overlays
+          if (showSidebar && sidebarIsOverlay) {
+            showSidebar = false;
+            return true;
+          }
+          if (showMembers && !isDesktop) {
+            showMembers = false;
+            return true;
+          }
           // Don't prevent default if nothing to close
           return false;
         },
@@ -758,16 +786,31 @@
   });
 </script>
 
+<svelte:window bind:innerWidth={innerWidth} />
+
 <div class="chat-layout">
   <!-- Left column: Server list + Channel sidebar -->
-  <div class="left-panel">
+  <div class="left-panel" class:overlay={sidebarIsOverlay} class:visible={sidebarIsOverlay && showSidebar}>
     <ServerList />
     <ChannelSidebar onVoiceChannelClick={handleVoiceChannelClick} {voiceRoom} />
   </div>
 
+  <!-- Sidebar overlay backdrop -->
+  {#if sidebarIsOverlay && showSidebar}
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="overlay-backdrop" onclick={handleOverlayClick}></div>
+  {/if}
+
   <!-- Center column: Header + Messages + Input -->
   <div class="center-panel">
-    <HeaderBar onToggleMembers={toggleMembers} membersVisible={showMembers} onTopicEdit={handleTopicEdit} />
+    <HeaderBar
+      onToggleMembers={toggleMembers}
+      membersVisible={showMembers}
+      onTopicEdit={handleTopicEdit}
+      onToggleSidebar={toggleSidebar}
+      showSidebarToggle={sidebarIsOverlay}
+    />
 
     <div class="message-area">
       <ConnectionBanner />
@@ -818,11 +861,18 @@
     {/if}
   </div>
 
-  <!-- Right column: Member list (hidden for DMs) -->
-  {#if showMembers && !isActiveDM}
-    <div class="right-panel">
+  <!-- Right column: Member list (overlay below 1200px, hidden for DMs) -->
+  {#if !isActiveDM && (isDesktop || showMembers)}
+    <div class="right-panel" class:overlay={!isDesktop} class:visible={!isDesktop && showMembers}>
       <MemberList onmention={handleMemberMention} />
     </div>
+  {/if}
+
+  <!-- Member list overlay backdrop -->
+  {#if !isDesktop && showMembers && !isActiveDM}
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="overlay-backdrop member-overlay-backdrop" onclick={handleOverlayClick}></div>
   {/if}
 </div>
 
@@ -872,12 +922,29 @@
     height: 100vh;
     overflow: hidden;
     background: var(--surface-base);
+    position: relative;
   }
 
   .left-panel {
     display: flex;
     flex-shrink: 0;
     height: 100%;
+    z-index: 1;
+  }
+
+  /* Below 900px: sidebar becomes an overlay that slides in from left */
+  .left-panel.overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100%;
+    z-index: 200;
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+  }
+
+  .left-panel.overlay.visible {
+    transform: translateX(0);
   }
 
   .center-panel {
@@ -910,11 +977,22 @@
     overflow-y: auto;
   }
 
-  /* Hide member list below 1200px per FRONTEND.md responsive spec */
-  @media (max-width: 1200px) {
-    .right-panel {
-      display: none;
-    }
+  /* Below 1200px: member list becomes an overlay from the right */
+  .right-panel.overlay {
+    position: fixed;
+    top: 0;
+    right: 0;
+    height: 100%;
+    z-index: 200;
+    box-shadow: -4px 0 16px rgba(0, 0, 0, 0.3);
+  }
+
+  /* Overlay backdrop for sidebar and member list */
+  .overlay-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 150;
+    background: rgba(0, 0, 0, 0.5);
   }
 
   /* Status banners */

@@ -7,9 +7,11 @@
     onToggleMembers?: () => void;
     membersVisible?: boolean;
     onTopicEdit?: (channel: string, newTopic: string) => void;
+    onToggleSidebar?: () => void;
+    showSidebarToggle?: boolean;
   }
 
-  let { onToggleMembers, membersVisible = false, onTopicEdit }: Props = $props();
+  let { onToggleMembers, membersVisible = false, onTopicEdit, onToggleSidebar, showSidebarToggle = false }: Props = $props();
 
   let channelInfo = $derived(
     channelUIState.activeChannel
@@ -73,6 +75,19 @@
 </script>
 
 <header class="header-bar">
+  {#if showSidebarToggle}
+    <button
+      class="action-button hamburger-button"
+      title="Toggle Sidebar"
+      aria-label="Toggle Sidebar"
+      onclick={onToggleSidebar}
+    >
+      <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+        <path d="M2 4h14M2 9h14M2 14h14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+      </svg>
+    </button>
+  {/if}
+
   <div class="channel-info">
     {#if channelUIState.activeChannel}
       <span class="channel-label">
@@ -272,5 +287,10 @@
   .action-button:disabled {
     opacity: 0.4;
     cursor: not-allowed;
+  }
+
+  .hamburger-button {
+    flex-shrink: 0;
+    margin-right: 8px;
   }
 </style>

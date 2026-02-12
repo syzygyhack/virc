@@ -2,7 +2,9 @@
 	import { tick } from 'svelte';
 	import { getMessages, getCursors, type Message } from '$lib/state/messages.svelte';
 	import { channelUIState } from '$lib/state/channels.svelte';
+	import { getLastReadMsgid } from '$lib/state/notifications.svelte';
 	import MessageComponent from './Message.svelte';
+	import UnreadDivider from './UnreadDivider.svelte';
 
 	interface Props {
 		onloadhistory?: (target: string, beforeMsgid: string) => void;
@@ -42,6 +44,20 @@
 			? getMessages(channelUIState.activeChannel)
 			: []
 	);
+
+	/**
+	 * The msgid of the first unread message (the message after lastReadMsgid).
+	 * Used to position the UnreadDivider.
+	 */
+	let firstUnreadMsgid = $derived(() => {
+		if (!channelUIState.activeChannel) return null;
+		const lastRead = getLastReadMsgid(channelUIState.activeChannel);
+		if (!lastRead) return null;
+
+		const idx = messages.findIndex((m) => m.msgid === lastRead);
+		if (idx === -1 || idx >= messages.length - 1) return null;
+		return messages[idx + 1].msgid;
+	});
 
 	/** Compute grouping info for each message. */
 	let groupedMessages = $derived(() => {
@@ -205,6 +221,9 @@
 	{/if}
 
 	{#each groupedMessages() as entry (entry.message.msgid)}
+		{#if firstUnreadMsgid() === entry.message.msgid}
+			<UnreadDivider />
+		{/if}
 		<div data-msgid={entry.message.msgid}>
 			<MessageComponent
 				message={entry.message}

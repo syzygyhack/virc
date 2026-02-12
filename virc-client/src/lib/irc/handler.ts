@@ -23,6 +23,9 @@ import {
 	setNamesLoaded,
 } from '../state/channels.svelte';
 import { setOnline, setOffline } from '../state/presence.svelte';
+import { getActiveChannel } from '../state/channels.svelte';
+import { incrementUnread } from '../state/notifications.svelte';
+import { userState } from '../state/user.svelte';
 
 /**
  * Active batches keyed by batch reference tag.
@@ -205,6 +208,14 @@ function handlePrivmsg(parsed: ParsedMessage): void {
 	}
 
 	addMessage(target, msg);
+
+	// Track unread if this message is for a non-active channel
+	const activeChannel = getActiveChannel();
+	if (target !== activeChannel) {
+		const myAccount = userState.account ?? '';
+		const isMention = myAccount !== '' && msg.text.includes(`@${myAccount}`);
+		incrementUnread(target, isMention);
+	}
 }
 
 function handleTagmsg(parsed: ParsedMessage): void {

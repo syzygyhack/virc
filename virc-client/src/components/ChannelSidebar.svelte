@@ -7,6 +7,7 @@
   } from '$lib/state/channels.svelte';
   import { getActiveServer } from '$lib/state/servers.svelte';
   import { voiceState } from '$lib/state/voice.svelte';
+  import { getUnreadCount, getMentionCount } from '$lib/state/notifications.svelte';
 
   interface Props {
     onVoiceChannelClick?: (channel: string) => void;
@@ -43,13 +44,22 @@
         </button>
         <div class="category-channels">
           {#each channelUIState.dmConversations as dm (dm.nick)}
+            {@const dmUnread = getUnreadCount(dm.nick)}
+            {@const dmMentions = getMentionCount(dm.nick)}
             <button
               class="channel-item"
               class:active={channelUIState.activeChannel === dm.nick}
+              class:has-unread={dmUnread > 0}
+              class:has-mentions={dmMentions > 0}
               onclick={() => handleChannelClick(dm.nick, false)}
             >
               <span class="channel-icon dm-icon">@</span>
               <span class="channel-name">{dm.nick}</span>
+              {#if dmUnread > 0}
+                <span class="unread-badge" class:mention-badge={dmMentions > 0}>
+                  {dmMentions > 0 ? dmMentions : dmUnread}
+                </span>
+              {/if}
             </button>
           {/each}
         </div>
@@ -79,10 +89,14 @@
         {#if !cat.collapsed}
           <div class="category-channels">
             {#each cat.channels as ch (ch)}
+              {@const chUnread = getUnreadCount(ch)}
+              {@const chMentions = getMentionCount(ch)}
               <button
                 class="channel-item"
                 class:active={!cat.voice && channelUIState.activeChannel === ch}
                 class:voice-connected={cat.voice && voiceState.currentRoom === ch}
+                class:has-unread={chUnread > 0}
+                class:has-mentions={chMentions > 0}
                 onclick={() => handleChannelClick(ch, !!cat.voice)}
               >
                 {#if cat.voice}
@@ -96,6 +110,11 @@
                   <span class="channel-icon hash-icon">#</span>
                 {/if}
                 <span class="channel-name">{ch.replace(/^#/, '')}</span>
+                {#if chUnread > 0}
+                  <span class="unread-badge" class:mention-badge={chMentions > 0}>
+                    {chMentions > 0 ? chMentions : chUnread}
+                  </span>
+                {/if}
               </button>
             {/each}
           </div>
@@ -246,5 +265,37 @@
     overflow: hidden;
     text-overflow: ellipsis;
     line-height: 1.3;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .channel-item.has-unread {
+    color: var(--text-primary);
+    font-weight: var(--weight-semibold);
+  }
+
+  .channel-item.has-mentions {
+    color: var(--accent-primary);
+  }
+
+  .unread-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    background: var(--text-muted);
+    color: var(--surface-low);
+    border-radius: 9px;
+    font-size: var(--font-xs);
+    font-weight: var(--weight-bold);
+    line-height: 1;
+    flex-shrink: 0;
+  }
+
+  .unread-badge.mention-badge {
+    background: var(--accent-primary);
+    color: var(--text-inverse);
   }
 </style>

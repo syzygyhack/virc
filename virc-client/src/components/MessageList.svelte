@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { tick } from 'svelte';
-	import { getMessages, getCursors, type Message } from '$lib/state/messages.svelte';
+	import { getMessages, getCursors, type Message, type MessageType } from '$lib/state/messages.svelte';
 	import { channelUIState } from '$lib/state/channels.svelte';
 	import { getLastReadMsgid } from '$lib/state/notifications.svelte';
 	import MessageComponent from './Message.svelte';
@@ -12,6 +12,7 @@
 		onreact?: (msgid: string) => void;
 		onmore?: (msgid: string, event: MouseEvent) => void;
 		ontogglereaction?: (msgid: string, emoji: string) => void;
+		onretry?: (msgid: string) => void;
 	}
 
 	let {
@@ -20,10 +21,33 @@
 		onreact,
 		onmore,
 		ontogglereaction,
+		onretry,
 	}: Props = $props();
+
+	/** System message types. */
+	const SYSTEM_TYPES: Set<MessageType> = new Set(['join', 'part', 'quit', 'nick', 'mode']);
+
+	function isSystemMessage(msg: Message): boolean {
+		return SYSTEM_TYPES.has(msg.type);
+	}
+
+	/** Return the icon for a system message type. */
+	function systemIcon(type: MessageType): string {
+		switch (type) {
+			case 'join': return '\u2192'; // →
+			case 'part': return '\u2190'; // ←
+			case 'quit': return '\u2190'; // ←
+			case 'nick': return '\u2726'; // ✦
+			case 'mode': return '\u2699'; // ⚙
+			default: return '';
+		}
+	}
 
 	/** The grouping window in milliseconds (7 minutes). */
 	const GROUPING_WINDOW_MS = 7 * 60 * 1000;
+
+	/** Minimum consecutive system messages before collapsing. */
+	const COLLAPSE_THRESHOLD = 3;
 
 	/** How close to the bottom (in px) counts as "at bottom" for auto-scroll. */
 	const SCROLL_BOTTOM_THRESHOLD = 48;
@@ -35,8 +59,12 @@
 	let isAtBottom = $state(true);
 	let unreadCount = $state(0);
 	let isLoadingHistory = $state(false);
+	let isAwaitingInitialMessages = $state(false);
 	let prevMessageCount = $state(0);
 	let prevScrollHeight = $state(0);
+
+	/** Set of collapsed group keys that the user has expanded. */
+	let expandedGroups: Set<string> = $state(new Set());
 
 	/** Messages for the active channel. */
 	let messages = $derived(
@@ -59,40 +87,77 @@
 		return messages[idx + 1].msgid;
 	});
 
-	/** Compute grouping info for each message. */
-	let groupedMessages = $derived(() => {
-		const result: Array<{
-			message: Message;
-			isGrouped: boolean;
-			isFirstInGroup: boolean;
-		}> = [];
+	/**
+	 * Render entries: regular messages and system messages, with consecutive
+	 * system messages collapsed into groups when there are 3+.
+	 */
+	type RenderEntry =
+		| { kind: 'message'; message: Message; isGrouped: boolean; isFirstInGroup: boolean }
+		| { kind: 'system'; message: Message }
+		| { kind: 'collapsed'; messages: Message[]; key: string };
 
-		for (let i = 0; i < messages.length; i++) {
+	let renderEntries = $derived(() => {
+		const result: RenderEntry[] = [];
+		let i = 0;
+
+		while (i < messages.length) {
 			const msg = messages[i];
-			const prev = i > 0 ? messages[i - 1] : null;
 
-			let isGrouped = false;
-			let isFirstInGroup = true;
-
-			if (prev) {
-				const sameAuthor = prev.nick === msg.nick;
-				const withinWindow =
-					msg.time.getTime() - prev.time.getTime() < GROUPING_WINDOW_MS;
-				const isReply = !!msg.replyTo;
-				const isSystem = msg.type !== 'privmsg';
-				const prevIsSystem = prev.type !== 'privmsg';
-
-				if (sameAuthor && withinWindow && !isReply && !isSystem && !prevIsSystem) {
-					isGrouped = true;
-					isFirstInGroup = false;
+			if (isSystemMessage(msg)) {
+				// Collect consecutive system messages
+				const systemRun: Message[] = [msg];
+				let j = i + 1;
+				while (j < messages.length && isSystemMessage(messages[j])) {
+					systemRun.push(messages[j]);
+					j++;
 				}
-			}
 
-			result.push({ message: msg, isGrouped, isFirstInGroup });
+				if (systemRun.length >= COLLAPSE_THRESHOLD) {
+					// Collapse into a group
+					const key = systemRun[0].msgid;
+					result.push({ kind: 'collapsed', messages: systemRun, key });
+				} else {
+					// Render individually
+					for (const sysMsg of systemRun) {
+						result.push({ kind: 'system', message: sysMsg });
+					}
+				}
+				i = j;
+			} else {
+				// Regular message — compute grouping
+				const prev = i > 0 ? messages[i - 1] : null;
+				let isGrouped = false;
+				let isFirstInGroup = true;
+
+				if (prev && !isSystemMessage(prev)) {
+					const sameAuthor = prev.nick === msg.nick;
+					const withinWindow =
+						msg.time.getTime() - prev.time.getTime() < GROUPING_WINDOW_MS;
+					const isReply = !!msg.replyTo;
+
+					if (sameAuthor && withinWindow && !isReply) {
+						isGrouped = true;
+						isFirstInGroup = false;
+					}
+				}
+
+				result.push({ kind: 'message', message: msg, isGrouped, isFirstInGroup });
+				i++;
+			}
 		}
 
 		return result;
 	});
+
+	function toggleCollapsedGroup(key: string): void {
+		if (expandedGroups.has(key)) {
+			expandedGroups.delete(key);
+		} else {
+			expandedGroups.add(key);
+		}
+		// Trigger reactivity by reassignment
+		expandedGroups = new Set(expandedGroups);
+	}
 
 	/** Check if scrolled to bottom. */
 	function checkScrollPosition(): void {
@@ -162,6 +227,11 @@
 		if (currentCount > prevMessageCount) {
 			const added = currentCount - prevMessageCount;
 
+			// Clear channel-switch skeleton when first messages arrive
+			if (isAwaitingInitialMessages) {
+				isAwaitingInitialMessages = false;
+			}
+
 			if (isLoadingHistory && scrollContainer) {
 				// Messages were prepended (history load) — preserve scroll position
 				tick().then(() => {
@@ -192,6 +262,11 @@
 		isAtBottom = true;
 		isLoadingHistory = false;
 		prevMessageCount = 0;
+		expandedGroups = new Set();
+
+		// Show skeleton placeholders if channel has no cached messages yet
+		const channelMessages = _channel ? getMessages(_channel) : [];
+		isAwaitingInitialMessages = channelMessages.length === 0;
 
 		tick().then(() => scrollToBottom());
 	});
@@ -222,32 +297,86 @@
 		</div>
 	{/if}
 
-	{#each groupedMessages() as entry (entry.message.msgid)}
-		{#if firstUnreadMsgid() === entry.message.msgid}
-			<UnreadDivider />
-		{/if}
-		{#if entry.message.type === 'join' || entry.message.type === 'part' || entry.message.type === 'quit'}
-			<div class="system-message" data-msgid={entry.message.msgid}>
-				<span class="system-icon">
-					{#if entry.message.type === 'join'}&#8594;{:else}&#8592;{/if}
-				</span>
-				<span class="system-text">{entry.message.text}</span>
+	{#if isAwaitingInitialMessages}
+		<div class="skeleton-loading channel-switch-skeleton">
+			<div class="skeleton-row">
+				<div class="skeleton-avatar"></div>
+				<div class="skeleton-content">
+					<div class="skeleton-line skeleton-name"></div>
+					<div class="skeleton-line skeleton-text"></div>
+					<div class="skeleton-line skeleton-text short"></div>
+				</div>
 			</div>
-		{:else}
-			<div data-msgid={entry.message.msgid}>
-				<MessageComponent
-					message={entry.message}
-					isGrouped={entry.isGrouped}
-					isFirstInGroup={entry.isFirstInGroup}
-					{onreply}
-					{onreact}
-					{onmore}
-					{ontogglereaction}
-					onscrolltomessage={handleScrollToMessage}
-				/>
+			<div class="skeleton-row">
+				<div class="skeleton-avatar"></div>
+				<div class="skeleton-content">
+					<div class="skeleton-line skeleton-name"></div>
+					<div class="skeleton-line skeleton-text"></div>
+				</div>
 			</div>
-		{/if}
-	{/each}
+			<div class="skeleton-row">
+				<div class="skeleton-avatar"></div>
+				<div class="skeleton-content">
+					<div class="skeleton-line skeleton-name"></div>
+					<div class="skeleton-line skeleton-text short"></div>
+				</div>
+			</div>
+		</div>
+	{:else if messages.length === 0 && !isLoadingHistory}
+		<div class="empty-channel">
+			<p class="empty-channel-text">
+				This is the beginning of {channelUIState.activeChannel ?? 'this channel'}. Say something!
+			</p>
+		</div>
+	{:else}
+		{#each renderEntries() as entry}
+			{#if entry.kind === 'collapsed'}
+				{#if expandedGroups.has(entry.key)}
+					{#each entry.messages as sysMsg (sysMsg.msgid)}
+						<div class="system-message" data-msgid={sysMsg.msgid}>
+							<span class="system-icon">{systemIcon(sysMsg.type)}</span>
+							<span class="system-text">{sysMsg.text}</span>
+						</div>
+					{/each}
+					<button class="collapse-toggle" onclick={() => toggleCollapsedGroup(entry.key)}>
+						Collapse
+					</button>
+				{:else}
+					<button
+						class="collapse-toggle"
+						onclick={() => toggleCollapsedGroup(entry.key)}
+					>
+						{entry.messages.length} events &mdash; click to expand
+					</button>
+				{/if}
+			{:else if entry.kind === 'system'}
+				{#if firstUnreadMsgid() === entry.message.msgid}
+					<UnreadDivider />
+				{/if}
+				<div class="system-message" data-msgid={entry.message.msgid}>
+					<span class="system-icon">{systemIcon(entry.message.type)}</span>
+					<span class="system-text">{entry.message.text}</span>
+				</div>
+			{:else}
+				{#if firstUnreadMsgid() === entry.message.msgid}
+					<UnreadDivider />
+				{/if}
+				<div data-msgid={entry.message.msgid}>
+					<MessageComponent
+						message={entry.message}
+						isGrouped={entry.isGrouped}
+						isFirstInGroup={entry.isFirstInGroup}
+						{onreply}
+						{onreact}
+						{onmore}
+						{ontogglereaction}
+						{onretry}
+						onscrolltomessage={handleScrollToMessage}
+					/>
+				</div>
+			{/if}
+		{/each}
+	{/if}
 </div>
 
 {#if !isAtBottom}
@@ -328,7 +457,23 @@
 		50% { opacity: 0.8; }
 	}
 
-	/* System messages (join/part/quit) */
+	/* Empty channel state */
+	.empty-channel {
+		flex: 1;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 32px;
+	}
+
+	.empty-channel-text {
+		color: var(--text-muted);
+		font-size: var(--font-md);
+		text-align: center;
+		margin: 0;
+	}
+
+	/* System messages (join/part/quit/nick/mode) */
 	.system-message {
 		display: flex;
 		align-items: center;
@@ -346,6 +491,26 @@
 
 	.system-text {
 		line-height: 1.375;
+	}
+
+	/* Collapsed system message group toggle */
+	.collapse-toggle {
+		display: block;
+		margin: 2px 72px;
+		padding: 2px 8px;
+		border: none;
+		border-radius: 4px;
+		background: none;
+		color: var(--text-muted);
+		font-size: var(--font-xs);
+		font-family: var(--font-primary);
+		cursor: pointer;
+		transition: background var(--duration-message) ease;
+	}
+
+	.collapse-toggle:hover {
+		background: var(--surface-high);
+		color: var(--text-secondary);
 	}
 
 	/* Jump to Present pill */

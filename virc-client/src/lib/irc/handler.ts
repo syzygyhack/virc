@@ -20,6 +20,7 @@ import {
 	addMember,
 	removeMember,
 	removeMemberFromAll,
+	renameMember,
 	getChannelsForNick,
 	setTopic,
 	setNamesLoaded,
@@ -33,6 +34,7 @@ import {
 	addMember as addRichMember,
 	removeMember as removeRichMember,
 	removeMemberFromAll as removeRichMemberFromAll,
+	renameMember as renameRichMember,
 	updatePresence,
 	setPresenceOffline,
 	getMember as getRichMember,
@@ -222,6 +224,12 @@ export function handleMessage(parsed: ParsedMessage): void {
 		case 'QUIT':
 			handleQuit(parsed);
 			break;
+		case 'NICK':
+			handleNick(parsed);
+			break;
+		case 'MODE':
+			handleMode(parsed);
+			break;
 		case 'TOPIC':
 			handleTopic(parsed);
 			break;
@@ -362,6 +370,41 @@ function handleQuit(parsed: ParsedMessage): void {
 		const msg = systemMessage('quit', channel, nick, `${nick} has quit${reason}`, parsed);
 		addMessage(channel, msg);
 	}
+}
+
+function handleNick(parsed: ParsedMessage): void {
+	const oldNick = parsed.source?.nick ?? '';
+	const newNick = parsed.params[0] ?? '';
+	if (!oldNick || !newNick) return;
+
+	// Find channels before renaming
+	const channels = getChannelsForNick(oldNick);
+
+	// Update member state
+	renameMember(oldNick, newNick);
+	renameRichMember(oldNick, newNick);
+
+	// Add system message to each channel the user is in
+	for (const channel of channels) {
+		const msg = systemMessage('nick', channel, newNick, `${oldNick} is now known as ${newNick}`, parsed);
+		addMessage(channel, msg);
+	}
+
+	// Update own nick if it's us
+	if (userState.nick === oldNick) {
+		userState.nick = newNick;
+	}
+}
+
+function handleMode(parsed: ParsedMessage): void {
+	const channel = parsed.params[0];
+	if (!channel || !channel.startsWith('#')) return; // Only handle channel modes
+
+	const modeStr = parsed.params[1] ?? '';
+	const nick = parsed.source?.nick ?? 'server';
+	const text = `${nick} sets mode ${parsed.params.slice(1).join(' ')}`;
+	const msg = systemMessage('mode', channel, nick, text, parsed);
+	addMessage(channel, msg);
 }
 
 function handleTopic(parsed: ParsedMessage): void {

@@ -460,6 +460,53 @@ describe('QUIT -> member state', () => {
 	});
 });
 
+describe('NICK handling', () => {
+	it('renames member in channel state', () => {
+		handle(':alice!a@host JOIN #test alice :Alice');
+		handle(':alice!a@host NICK bob');
+		expect(getChannel('#test')?.members.has('bob')).toBe(true);
+		expect(getChannel('#test')?.members.has('alice')).toBe(false);
+	});
+
+	it('renames member in rich member state', () => {
+		handle(':alice!a@host JOIN #test alice :Alice');
+		handle(':alice!a@host NICK bob');
+		expect(getMember('#test', 'bob')).not.toBeNull();
+		expect(getMember('#test', 'alice')).toBeNull();
+	});
+
+	it('adds system message to each channel the user was in', () => {
+		handle(':alice!a@host JOIN #test alice :Alice');
+		handle(':alice!a@host JOIN #other alice :Alice');
+		handle(':alice!a@host NICK bob');
+		const testMsgs = getMessages('#test');
+		const nickMsg = testMsgs.find((m) => m.type === 'nick');
+		expect(nickMsg).toBeDefined();
+		expect(nickMsg!.text).toBe('alice is now known as bob');
+
+		const otherMsgs = getMessages('#other');
+		const otherNickMsg = otherMsgs.find((m) => m.type === 'nick');
+		expect(otherNickMsg).toBeDefined();
+	});
+});
+
+describe('MODE handling', () => {
+	it('adds system message for channel mode changes', () => {
+		handle(':alice!a@host JOIN #test alice :Alice');
+		handle(':alice!a@host MODE #test +o bob');
+		const msgs = getMessages('#test');
+		const modeMsg = msgs.find((m) => m.type === 'mode');
+		expect(modeMsg).toBeDefined();
+		expect(modeMsg!.text).toContain('+o bob');
+	});
+
+	it('ignores user mode changes (non-channel targets)', () => {
+		handle(':server MODE alice +i');
+		// No channel messages should be created
+		expect(getMessages('alice')).toHaveLength(0);
+	});
+});
+
 describe('MONITOR -> member presence', () => {
 	it('sets member presence to online on RPL_MONONLINE (730)', () => {
 		handle(':alice!a@host JOIN #test alice :Alice');

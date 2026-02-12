@@ -184,6 +184,18 @@ export function setPresenceOffline(nick: string): void {
 	}
 }
 
+/** Rename a member across all channels (used for NICK). */
+export function renameMember(oldNick: string, newNick: string): void {
+	for (const map of memberState.channels.values()) {
+		const member = map.get(oldNick);
+		if (member) {
+			map.delete(oldNick);
+			member.nick = newNick;
+			map.set(newNick, member);
+		}
+	}
+}
+
 /** Reset all member state. */
 export function resetMembers(): void {
 	memberState.channels.clear();

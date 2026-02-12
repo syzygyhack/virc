@@ -65,6 +65,18 @@ export function removeMemberFromAll(nick: string): void {
 	}
 }
 
+/** Rename a member across all channels (used for NICK). */
+export function renameMember(oldNick: string, newNick: string): void {
+	for (const ch of channelState.channels.values()) {
+		const member = ch.members.get(oldNick);
+		if (member) {
+			ch.members.delete(oldNick);
+			member.nick = newNick;
+			ch.members.set(newNick, member);
+		}
+	}
+}
+
 /** Get all channel names where a nick is a member. */
 export function getChannelsForNick(nick: string): string[] {
 	const channels: string[] = [];

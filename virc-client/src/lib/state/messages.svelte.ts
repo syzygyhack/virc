@@ -7,7 +7,8 @@
 
 const MAX_MESSAGES_PER_CHANNEL = 500;
 
-export type MessageType = 'privmsg' | 'join' | 'part' | 'quit';
+export type MessageType = 'privmsg' | 'join' | 'part' | 'quit' | 'nick' | 'mode';
+export type SendState = 'sending' | 'sent' | 'failed';
 
 export interface Message {
 	msgid: string;
@@ -21,6 +22,7 @@ export interface Message {
 	reactions: Map<string, Set<string>>; // emoji -> set of accounts
 	isRedacted: boolean;
 	type: MessageType;
+	sendState?: SendState; // only set for locally-sent messages
 }
 
 interface ChannelCursors {
@@ -148,6 +150,14 @@ export function getCursors(target: string): ChannelCursors {
 export function clearChannel(target: string): void {
 	messageState.channels.delete(target);
 	messageState.cursors.delete(target);
+}
+
+/** Update the send state of a locally-sent message. */
+export function updateSendState(target: string, msgid: string, state: SendState): void {
+	const msg = getMessage(target, msgid);
+	if (msg) {
+		msg.sendState = state;
+	}
 }
 
 /** Reset all message state. */

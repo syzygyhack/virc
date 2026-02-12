@@ -11,6 +11,7 @@ import {
 	getCursors,
 	clearChannel,
 	resetMessages,
+	updateSendState,
 	type Message,
 } from './messages.svelte';
 
@@ -250,6 +251,52 @@ describe('message state', () => {
 			resetMessages();
 			expect(getMessages('#a')).toEqual([]);
 			expect(getMessages('#b')).toEqual([]);
+		});
+	});
+
+	describe('message types', () => {
+		it('stores nick type messages', () => {
+			addMessage('#test', makeMessage({ msgid: 'n1', type: 'nick', text: 'alice is now known as bob' }));
+			const msg = getMessage('#test', 'n1');
+			expect(msg).not.toBeNull();
+			expect(msg!.type).toBe('nick');
+		});
+
+		it('stores mode type messages', () => {
+			addMessage('#test', makeMessage({ msgid: 'm1', type: 'mode', text: 'alice sets mode +o bob' }));
+			const msg = getMessage('#test', 'm1');
+			expect(msg).not.toBeNull();
+			expect(msg!.type).toBe('mode');
+		});
+	});
+
+	describe('updateSendState', () => {
+		it('sets sendState on a message', () => {
+			addMessage('#test', makeMessage({ msgid: 'send-1' }));
+			expect(getMessage('#test', 'send-1')!.sendState).toBeUndefined();
+
+			updateSendState('#test', 'send-1', 'sending');
+			expect(getMessage('#test', 'send-1')!.sendState).toBe('sending');
+
+			updateSendState('#test', 'send-1', 'sent');
+			expect(getMessage('#test', 'send-1')!.sendState).toBe('sent');
+		});
+
+		it('sets sendState to failed', () => {
+			addMessage('#test', makeMessage({ msgid: 'send-2' }));
+			updateSendState('#test', 'send-2', 'failed');
+			expect(getMessage('#test', 'send-2')!.sendState).toBe('failed');
+		});
+
+		it('does nothing for unknown msgid', () => {
+			addMessage('#test', makeMessage({ msgid: 'send-3' }));
+			updateSendState('#test', 'unknown', 'failed');
+			expect(getMessage('#test', 'send-3')!.sendState).toBeUndefined();
+		});
+
+		it('does nothing for unknown channel', () => {
+			updateSendState('#nope', 'send-1', 'failed');
+			// No error thrown
 		});
 	});
 });

@@ -29,6 +29,26 @@ describe('parseMessage', () => {
 		expect(msg.params).toEqual(['#channel', 'tagged message']);
 	});
 
+	it('parses a message with msgid and time tags', () => {
+		const msg = parseMessage('@msgid=abc123;time=2024-01-01T00:00:00Z :nick PRIVMSG #chan :text');
+		expect(msg.tags).toEqual({
+			msgid: 'abc123',
+			time: '2024-01-01T00:00:00Z'
+		});
+		expect(msg.command).toBe('PRIVMSG');
+		expect(msg.params).toEqual(['#chan', 'text']);
+	});
+
+	it('parses a TAGMSG with client tags', () => {
+		const msg = parseMessage('@+draft/react=\u{1f44d};+draft/reply=xyz TAGMSG #chan');
+		expect(msg.tags).toEqual({
+			'+draft/react': '\u{1f44d}',
+			'+draft/reply': 'xyz'
+		});
+		expect(msg.command).toBe('TAGMSG');
+		expect(msg.params).toEqual(['#chan']);
+	});
+
 	it('parses a numeric reply', () => {
 		const msg = parseMessage(':server.example.com 001 nick :Welcome to the network');
 		expect(msg.command).toBe('001');

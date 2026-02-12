@@ -1,0 +1,186 @@
+import { describe, it, expect } from 'vitest';
+import { renderIRC, markdownToIRC, linkify, highlightMentions, nickColor } from './format';
+
+describe('renderIRC', () => {
+	it('renders bold', () => {
+		expect(renderIRC('\x02hello\x02')).toBe('<strong>hello</strong>');
+	});
+
+	it('renders italic', () => {
+		expect(renderIRC('\x1Dhello\x1D')).toBe('<em>hello</em>');
+	});
+
+	it('renders underline', () => {
+		expect(renderIRC('\x1Fhello\x1F')).toBe('<u>hello</u>');
+	});
+
+	it('renders strikethrough', () => {
+		expect(renderIRC('\x1Ehello\x1E')).toBe('<s>hello</s>');
+	});
+
+	it('renders monospace', () => {
+		expect(renderIRC('\x11hello\x11')).toBe('<code>hello</code>');
+	});
+
+	it('renders foreground color', () => {
+		const result = renderIRC('\x034hello\x03');
+		expect(result).toContain('style="color:');
+		expect(result).toContain('hello');
+		expect(result).toContain('</span>');
+	});
+
+	it('renders two-digit foreground color', () => {
+		const result = renderIRC('\x0312hello\x03');
+		expect(result).toContain('style="color:');
+		expect(result).toContain('hello');
+	});
+
+	it('renders foreground and background color', () => {
+		const result = renderIRC('\x034,2hello\x03');
+		expect(result).toContain('color:');
+		expect(result).toContain('background-color:');
+		expect(result).toContain('hello');
+	});
+
+	it('resets all formatting with \\x0F', () => {
+		const result = renderIRC('\x02bold\x0F plain');
+		expect(result).toBe('<strong>bold</strong> plain');
+	});
+
+	it('handles nested formatting', () => {
+		const result = renderIRC('\x02bold \x1Dand italic\x1D\x02');
+		expect(result).toContain('<strong>');
+		expect(result).toContain('<em>');
+		expect(result).toContain('and italic');
+	});
+
+	it('returns plain text unchanged', () => {
+		expect(renderIRC('hello world')).toBe('hello world');
+	});
+
+	it('escapes HTML entities in text', () => {
+		expect(renderIRC('<script>alert("xss")</script>')).toBe(
+			'&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;'
+		);
+	});
+
+	it('handles unclosed formatting at end of string', () => {
+		const result = renderIRC('\x02bold text');
+		expect(result).toBe('<strong>bold text</strong>');
+	});
+});
+
+describe('markdownToIRC', () => {
+	it('converts bold', () => {
+		expect(markdownToIRC('**hello**')).toBe('\x02hello\x02');
+	});
+
+	it('converts italic', () => {
+		expect(markdownToIRC('*hello*')).toBe('\x1Dhello\x1D');
+	});
+
+	it('converts strikethrough', () => {
+		expect(markdownToIRC('~~hello~~')).toBe('\x1Ehello\x1E');
+	});
+
+	it('converts inline code', () => {
+		expect(markdownToIRC('`hello`')).toBe('\x11hello\x11');
+	});
+
+	it('handles mixed formatting', () => {
+		expect(markdownToIRC('**bold** and *italic*')).toBe(
+			'\x02bold\x02 and \x1Ditalic\x1D'
+		);
+	});
+
+	it('returns plain text unchanged', () => {
+		expect(markdownToIRC('hello world')).toBe('hello world');
+	});
+
+	it('does not convert bold inside italic markers', () => {
+		// **bold** should be processed before *italic*
+		const result = markdownToIRC('**bold**');
+		expect(result).toBe('\x02bold\x02');
+	});
+});
+
+describe('linkify', () => {
+	it('wraps http URLs in anchor tags', () => {
+		const result = linkify('visit http://example.com today');
+		expect(result).toContain('<a href="http://example.com"');
+		expect(result).toContain('target="_blank"');
+		expect(result).toContain('rel="noopener noreferrer"');
+		expect(result).toContain('>http://example.com</a>');
+	});
+
+	it('wraps https URLs in anchor tags', () => {
+		const result = linkify('visit https://example.com today');
+		expect(result).toContain('<a href="https://example.com"');
+	});
+
+	it('handles URLs with paths and query strings', () => {
+		const result = linkify('see https://example.com/path?q=1&r=2');
+		expect(result).toContain('href="https://example.com/path?q=1&amp;r=2"');
+	});
+
+	it('does not linkify plain text', () => {
+		expect(linkify('hello world')).toBe('hello world');
+	});
+
+	it('handles multiple URLs', () => {
+		const result = linkify('http://a.com and http://b.com');
+		expect(result).toContain('href="http://a.com"');
+		expect(result).toContain('href="http://b.com"');
+	});
+
+	it('does not double-wrap URLs already in anchor tags', () => {
+		const input = '<a href="http://example.com">http://example.com</a>';
+		const result = linkify(input);
+		expect(result).not.toContain('<a href="<a');
+	});
+});
+
+describe('highlightMentions', () => {
+	it('highlights @mention of own account', () => {
+		const result = highlightMentions('hello @alice how are you', 'alice');
+		expect(result).toContain('class="mention mention-self"');
+		expect(result).toContain('@alice');
+	});
+
+	it('highlights @mention of other users', () => {
+		const result = highlightMentions('hello @bob', 'alice');
+		expect(result).toContain('class="mention"');
+		expect(result).toContain('@bob');
+	});
+
+	it('highlights #channel references', () => {
+		const result = highlightMentions('join #general', 'alice');
+		expect(result).toContain('class="channel-ref"');
+		expect(result).toContain('#general');
+	});
+
+	it('returns plain text unchanged', () => {
+		expect(highlightMentions('hello world', 'alice')).toBe('hello world');
+	});
+
+	it('is case-insensitive for self-mention', () => {
+		const result = highlightMentions('hello @Alice', 'alice');
+		expect(result).toContain('class="mention mention-self"');
+	});
+});
+
+describe('nickColor', () => {
+	it('returns an hsl string', () => {
+		const color = nickColor('alice');
+		expect(color).toMatch(/^hsl\(\d+, 65%, 65%\)$/);
+	});
+
+	it('returns consistent color for same account', () => {
+		expect(nickColor('alice')).toBe(nickColor('alice'));
+	});
+
+	it('returns different colors for different accounts', () => {
+		// While not guaranteed, these common nicks should differ
+		expect(nickColor('alice')).not.toBe(nickColor('bob'));
+	});
+});

@@ -57,7 +57,7 @@
 		};
 	}
 
-	let conn: IRCConnection | null = null;
+	let conn: IRCConnection | null = $state(null);
 	let voiceRoom: Room | null = $state(null);
 	let showMembers = $state(false);
 	let showSidebar = $state(false);

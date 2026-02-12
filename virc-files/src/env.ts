@@ -29,4 +29,10 @@ export const env = {
   get PORT() {
     return parseInt(optional("PORT", "8080"), 10);
   },
+  get CONFIG_PATH() {
+    return optional("CONFIG_PATH", "config/virc.json");
+  },
+  get SERVER_NAME() {
+    return optional("SERVER_NAME", "");
+  },
 } as const;

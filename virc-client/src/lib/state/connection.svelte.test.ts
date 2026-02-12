@@ -48,6 +48,20 @@ describe('connectionState', () => {
 		expect(connectionState.status).toBe('reconnecting');
 	});
 
+	it('setReconnecting() with attempt number tracks the attempt', () => {
+		setReconnecting(3);
+		expect(connectionState.status).toBe('reconnecting');
+		expect(connectionState.reconnectAttempt).toBe(3);
+	});
+
+	it('setConnected() resets reconnectAttempt to 0', () => {
+		setReconnecting(5);
+		expect(connectionState.reconnectAttempt).toBe(5);
+
+		setConnected();
+		expect(connectionState.reconnectAttempt).toBe(0);
+	});
+
 	it('setLatency() updates latency', () => {
 		setLatency(42);
 		expect(connectionState.latency).toBe(42);

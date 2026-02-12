@@ -216,6 +216,7 @@ describe('IRCConnection', () => {
 			// First reconnect after 1s
 			await vi.advanceTimersByTimeAsync(1000);
 			expect(reconnecting).toHaveBeenCalledTimes(1);
+			expect(reconnecting).toHaveBeenLastCalledWith(1);
 			expect(MockWebSocket.instances.length).toBe(2);
 
 			// Simulate failure on reconnect
@@ -225,6 +226,7 @@ describe('IRCConnection', () => {
 			// Second reconnect after 2s
 			await vi.advanceTimersByTimeAsync(2000);
 			expect(reconnecting).toHaveBeenCalledTimes(2);
+			expect(reconnecting).toHaveBeenLastCalledWith(2);
 			expect(MockWebSocket.instances.length).toBe(3);
 
 			// Simulate failure again
@@ -234,6 +236,7 @@ describe('IRCConnection', () => {
 			// Third reconnect after 4s
 			await vi.advanceTimersByTimeAsync(4000);
 			expect(reconnecting).toHaveBeenCalledTimes(3);
+			expect(reconnecting).toHaveBeenLastCalledWith(3);
 			expect(MockWebSocket.instances.length).toBe(4);
 		});
 

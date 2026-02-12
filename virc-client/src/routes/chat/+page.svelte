@@ -3,8 +3,8 @@
   import { IRCConnection } from '$lib/irc/connection';
   import { negotiateCaps } from '$lib/irc/cap';
   import { authenticateSASL } from '$lib/irc/sasl';
-  import { registerHandler } from '$lib/irc/handler';
-  import { join, chathistory, markread, tagmsg, redact, privmsg, topic } from '$lib/irc/commands';
+  import { registerHandler, resetHandlerState } from '$lib/irc/handler';
+  import { join, chathistory, markread, tagmsg, redact, privmsg, topic, monitor } from '$lib/irc/commands';
   import { getCredentials, getToken, fetchToken, startTokenRefresh, stopTokenRefresh } from '$lib/api/auth';
   import { connectToVoice, disconnectVoice } from '$lib/voice/room';
   import { voiceState, toggleMute, toggleDeafen } from '$lib/state/voice.svelte';
@@ -13,11 +13,13 @@
     setConnecting,
     setConnected,
     setDisconnected,
+    setReconnecting,
     connectionState,
   } from '$lib/state/connection.svelte';
   import { rehydrate, userState } from '$lib/state/user.svelte';
   import {
     channelUIState,
+    channelState,
     setActiveChannel,
     setCategories,
     isDMTarget,
@@ -40,6 +42,7 @@
   import QuickSwitcher from '../../components/QuickSwitcher.svelte';
   import AuthExpiredModal from '../../components/AuthExpiredModal.svelte';
   import ErrorBoundary from '../../components/ErrorBoundary.svelte';
+  import ConnectionBanner from '../../components/ConnectionBanner.svelte';
 
   /** virc.json config shape (subset we consume). */
   interface VircConfig {
@@ -405,10 +408,97 @@
       if (firstChannel) {
         setActiveChannel(firstChannel);
       }
+
+      // 10. Register reconnect event handlers
+      conn.on('reconnecting', (attempt: number) => {
+        setReconnecting(attempt);
+      });
+
+      conn.on('reconnected', () => {
+        handleReconnect(filesUrl);
+      });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       error = msg;
       setDisconnected(msg);
+    }
+  }
+
+  /**
+   * Handle a successful WebSocket reconnect.
+   * Re-authenticates, rejoins channels, fills message gaps, and refreshes JWT.
+   */
+  async function handleReconnect(filesUrl: string): Promise<void> {
+    if (!conn) return;
+
+    const creds = getCredentials();
+    if (!creds) return;
+
+    try {
+      // Clear stale handler state (batch buffers, typing timers)
+      resetHandlerState();
+
+      // 1. Re-register message handler on the new WebSocket
+      registerHandler(conn);
+
+      // 2. NICK/USER + CAP negotiation
+      conn.send(`NICK ${creds.account}`);
+      conn.send(`USER ${creds.account} 0 * :${creds.account}`);
+      await negotiateCaps(conn);
+
+      // 3. SASL re-authentication
+      await authenticateSASL(conn, creds.account, creds.password);
+
+      // 4. Refresh virc-files JWT
+      try {
+        await fetchToken(filesUrl, creds.account, creds.password);
+      } catch {
+        // Non-fatal — chat still works without JWT
+      }
+
+      // 5. Re-join all previously joined channels
+      const joinedChannels = Array.from(channelState.channels.keys()).filter(
+        (ch) => ch.startsWith('#') || ch.startsWith('&')
+      );
+      if (joinedChannels.length > 0) {
+        join(conn, joinedChannels);
+      }
+
+      // 6. Fill message gaps via CHATHISTORY AFTER for each channel
+      for (const channel of joinedChannels) {
+        const cursors = getCursors(channel);
+        if (cursors.newestMsgid) {
+          chathistory(conn, 'AFTER', channel, `msgid=${cursors.newestMsgid}`, '50');
+        }
+      }
+
+      // 7. Re-establish MONITOR for presence tracking
+      // Collect all unique nicks from DM conversations for monitoring
+      const dmNicks = channelUIState.dmConversations.map((dm) => dm.nick);
+      if (dmNicks.length > 0) {
+        monitor(conn, '+', dmNicks);
+      }
+
+      // 8. Refresh voice connection if was in a voice channel
+      if (voiceState.currentRoom && voiceRoom) {
+        const voiceChannel = voiceState.currentRoom;
+        try {
+          await disconnectVoice(voiceRoom);
+          voiceRoom = null;
+          // Re-join the voice channel
+          await handleVoiceChannelClick(voiceChannel);
+        } catch {
+          // Voice reconnect failure is non-fatal
+          voiceRoom = null;
+        }
+      }
+
+      // 9. Mark connected
+      setConnected();
+      error = null;
+    } catch (e) {
+      console.error('Reconnect recovery failed:', e);
+      // Connection will retry via the existing backoff mechanism
     }
   }
 
@@ -680,6 +770,7 @@
     <HeaderBar onToggleMembers={toggleMembers} membersVisible={showMembers} onTopicEdit={handleTopicEdit} />
 
     <div class="message-area">
+      <ConnectionBanner />
       <ErrorBoundary>
         {#if error}
           <div class="error-banner">
@@ -689,11 +780,6 @@
           <div class="splash-screen">
             <div class="splash-spinner"></div>
             <span class="splash-text">Connecting to server...</span>
-          </div>
-        {:else if connectionState.status === 'reconnecting'}
-          <div class="splash-screen reconnecting">
-            <div class="splash-spinner"></div>
-            <span class="splash-text">Reconnecting...</span>
           </div>
         {:else if !channelUIState.activeChannel}
           <div class="empty-state">
@@ -851,10 +937,6 @@
     align-items: center;
     justify-content: center;
     gap: 16px;
-  }
-
-  .splash-screen.reconnecting .splash-text {
-    color: var(--warning);
   }
 
   .splash-spinner {

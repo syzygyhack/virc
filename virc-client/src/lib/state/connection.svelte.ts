@@ -11,6 +11,7 @@ interface ConnectionStore {
 	status: ConnectionState;
 	error: string | null;
 	latency: number | null;
+	reconnectAttempt: number;
 }
 
 /** Reactive connection state — components read this directly. */
@@ -18,12 +19,14 @@ export const connectionState: ConnectionStore = $state({
 	status: 'disconnected',
 	error: null,
 	latency: null,
+	reconnectAttempt: 0,
 });
 
 /** Mark connection as established and clear any previous error. */
 export function setConnected(): void {
 	connectionState.status = 'connected';
 	connectionState.error = null;
+	connectionState.reconnectAttempt = 0;
 }
 
 /**
@@ -37,8 +40,11 @@ export function setDisconnected(error?: string): void {
 }
 
 /** Mark connection as attempting to reconnect. */
-export function setReconnecting(): void {
+export function setReconnecting(attempt?: number): void {
 	connectionState.status = 'reconnecting';
+	if (attempt !== undefined) {
+		connectionState.reconnectAttempt = attempt;
+	}
 }
 
 /** Mark connection as in-progress (initial connect). */

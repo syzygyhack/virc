@@ -147,7 +147,7 @@ export class IRCConnection {
 
 		this.reconnectTimer = setTimeout(() => {
 			this.reconnectTimer = null;
-			this.emit('reconnecting');
+			this.emit('reconnecting', this.reconnectAttempt);
 			this.attemptReconnect();
 		}, delay);
 	}

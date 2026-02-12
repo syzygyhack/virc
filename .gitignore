@@ -1,0 +1,34 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+.svelte-kit/
+
+# Environment files
+.env
+.env.*
+*.local
+
+# OS files
+.DS_Store
+
+# Data volumes
+ergo-data/
+mysql-data/
+
+# Certificates
+*.pem
+
+# Caddy
+.caddy/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log

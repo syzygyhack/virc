@@ -1,0 +1,15 @@
+:80 {
+    # IRC WebSocket
+    reverse_proxy /ws ergo:8097
+
+    # File uploads, auth bridge, invites, push, previews
+    reverse_proxy /api/* virc-files:8080
+
+    # Server config discovery
+    reverse_proxy /.well-known/* virc-files:8080
+
+    # Static client files with SPA fallback
+    root * /srv/virc
+    try_files {path} /index.html
+    file_server
+}

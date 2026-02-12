@@ -1,0 +1,62 @@
+services:
+  ergo:
+    image: ghcr.io/ergochat/ergo:stable
+    ports:
+      - "6697:6697"
+      - "8097:8097"
+    volumes:
+      - ./config/ergo/ircd.yaml:/ircd/ircd.yaml
+      - ergo-data:/ircd/db
+    restart: unless-stopped
+
+  mysql:
+    image: mariadb:11
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-changeme}
+      MYSQL_DATABASE: ergo_history
+    volumes:
+      - mysql-data:/var/lib/mysql
+    restart: unless-stopped
+
+  livekit:
+    image: livekit/livekit-server:latest
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "50000-50100:50000-50100/udp"
+    volumes:
+      - ./config/livekit/config.yaml:/etc/livekit.yaml
+    command: --config /etc/livekit.yaml --dev
+    restart: unless-stopped
+
+  virc-files:
+    build: ./virc-files
+    ports:
+      - "8080:8080"
+    environment:
+      ERGO_API: http://ergo:8089
+      LIVEKIT_URL: ws://livekit:7880
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-devkey}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-devsecret}
+      JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret}
+    depends_on:
+      - ergo
+      - mysql
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    ports:
+      - "443:443"
+      - "80:80"
+    volumes:
+      - ./config/caddy/Caddyfile:/etc/caddy/Caddyfile
+      - ./virc-client/build:/srv/virc
+    depends_on:
+      - ergo
+      - virc-files
+    restart: unless-stopped
+
+volumes:
+  ergo-data:
+  mysql-data:

@@ -1,0 +1,58 @@
+server:
+    name: virc.local
+
+listeners:
+    ":6667":
+        # plain text for dev
+    ":8097":
+        websocket: true
+
+accounts:
+    registration:
+        enabled: true
+        allow-before-connect: true
+    authentication-enabled: true
+    multiclient:
+        enabled: true
+        allowed-by-default: true
+        always-on: opt-out
+    nick-reservation:
+        enabled: true
+        method: strict
+        force-nick-equals-account: true
+
+channels:
+    registration:
+        enabled: true
+
+history:
+    enabled: true
+    channel-length: 4096
+    client-length: 512
+    chathistory-maxmessages: 1000
+    retention:
+        allow-individual-delete: true
+    tagmsg-storage:
+        default: false
+        whitelist:
+            - "+draft/react"
+            - "+react"
+    persistent:
+        enabled: true
+        unregistered-channels: true
+        registered-channels: true
+        direct-messages: true
+
+datastore:
+    mysql:
+        enabled: true
+        host: "mysql"
+        port: 3306
+        user: "root"
+        password: "changeme"
+        history-database: "ergo_history"
+        timeout: 3s
+
+api:
+    enabled: true
+    listener: "0.0.0.0:8089"

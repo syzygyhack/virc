@@ -74,7 +74,7 @@ export function negotiateCaps(conn: IRCConnection): Promise<string[]> {
 					const toRequest = MVP_CAPS.filter((c) => advertised.includes(c));
 
 					if (toRequest.length === 0) {
-						conn.on('message', () => {}); // noop — can't remove handler easily
+						conn.off('message', handler);
 						resolve([]);
 						return;
 					}
@@ -98,9 +98,7 @@ export function negotiateCaps(conn: IRCConnection): Promise<string[]> {
 		}
 
 		function cleanup() {
-			// We can't remove listeners from IRCConnection's current API,
-			// but we can stop processing by nullifying the phase check.
-			phase = 'req'; // effectively a no-op on future messages
+			conn.off('message', handler);
 		}
 
 		conn.on('message', handler);

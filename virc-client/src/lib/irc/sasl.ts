@@ -38,6 +38,7 @@ export function authenticateSASL(
 				// 903 = RPL_SASLSUCCESS
 				if (msg.command === '903') {
 					phase = 'done';
+					conn.off('message', handler);
 					conn.send('CAP END');
 					resolve();
 					return;
@@ -46,6 +47,7 @@ export function authenticateSASL(
 				// 904 = ERR_SASLFAIL, 905 = ERR_SASLTOOLONG
 				if (msg.command === '904' || msg.command === '905') {
 					phase = 'done';
+					conn.off('message', handler);
 					const reason = msg.params[msg.params.length - 1] || 'SASL authentication failed';
 					reject(new Error(reason));
 					return;

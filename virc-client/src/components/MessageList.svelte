@@ -76,8 +76,11 @@
 	/**
 	 * The msgid of the first unread message (the message after lastReadMsgid).
 	 * Used to position the UnreadDivider.
+	 *
+	 * Computed once as a value (not a callable function) so the template doesn't
+	 * re-execute the findIndex for every message entry.
 	 */
-	let firstUnreadMsgid = $derived(() => {
+	let firstUnreadMsgid = $derived.by(() => {
 		if (!channelUIState.activeChannel) return null;
 		const lastRead = getLastReadMsgid(channelUIState.activeChannel);
 		if (!lastRead) return null;
@@ -274,6 +277,8 @@
 
 <div
 	class="message-list"
+	role="log"
+	aria-live="polite"
 	bind:this={scrollContainer}
 	onscroll={handleScroll}
 >
@@ -350,7 +355,7 @@
 					</button>
 				{/if}
 			{:else if entry.kind === 'system'}
-				{#if firstUnreadMsgid() === entry.message.msgid}
+				{#if firstUnreadMsgid === entry.message.msgid}
 					<UnreadDivider />
 				{/if}
 				<div class="system-message" data-msgid={entry.message.msgid}>
@@ -358,7 +363,7 @@
 					<span class="system-text">{entry.message.text}</span>
 				</div>
 			{:else}
-				{#if firstUnreadMsgid() === entry.message.msgid}
+				{#if firstUnreadMsgid === entry.message.msgid}
 					<UnreadDivider />
 				{/if}
 				<div data-msgid={entry.message.msgid}>

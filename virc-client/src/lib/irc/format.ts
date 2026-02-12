@@ -247,6 +247,11 @@ export function markdownToIRC(text: string): string {
  * Auto-detect URLs and wrap them in anchor tags.
  *
  * Handles http:// and https:// URLs. Skips URLs already inside anchor tags.
+ *
+ * **WARNING: XSS Safety** — This function assumes the input text has already
+ * been HTML-escaped (e.g. by `renderIRC()`). Calling this on raw, unescaped
+ * user input WILL create an XSS vulnerability. Use `renderMessage()` instead
+ * of calling this directly.
  */
 export function linkify(text: string): string {
 	// Don't process if already contains anchor tags (pre-linkified)
@@ -269,6 +274,11 @@ export function linkify(text: string): string {
  *
  * - @username → wrapped in span with class "mention" (or "mention mention-self" if own account)
  * - #channel → wrapped in span with class "channel-ref"
+ *
+ * **WARNING: XSS Safety** — This function assumes the input text has already
+ * been HTML-escaped (e.g. by `renderIRC()`). Calling this on raw, unescaped
+ * user input WILL create an XSS vulnerability. Use `renderMessage()` instead
+ * of calling this directly.
  */
 export function highlightMentions(text: string, myAccount: string): string {
 	// Highlight @mentions
@@ -298,4 +308,23 @@ export function nickColor(account: string): string {
 	}
 	const hue = Math.abs(hash) % 360;
 	return `hsl(${hue}, 65%, 65%)`;
+}
+
+/**
+ * Render an IRC message to safe HTML.
+ *
+ * Applies the full rendering pipeline in the **required** order:
+ * 1. `renderIRC()` — escapes HTML and converts mIRC formatting codes to HTML tags
+ * 2. `linkify()` — wraps URLs in anchor tags (assumes pre-escaped input)
+ * 3. `highlightMentions()` — wraps @mentions and #channels in styled spans
+ *
+ * **This is the only safe entry point** for rendering user-generated message text
+ * to HTML. Do not call `linkify()` or `highlightMentions()` directly on unescaped
+ * text — doing so creates an XSS vulnerability.
+ */
+export function renderMessage(text: string, myAccount: string): string {
+	let html = renderIRC(text);
+	html = linkify(html);
+	html = highlightMentions(html, myAccount);
+	return html;
 }

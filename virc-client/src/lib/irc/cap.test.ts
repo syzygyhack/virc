@@ -19,9 +19,16 @@ function createMockConn() {
 				handlers.push(handler as (line: string) => void);
 			}
 		},
+		off(event: string, handler: (...args: any[]) => void) {
+			if (event === 'message') {
+				const idx = handlers.indexOf(handler as (line: string) => void);
+				if (idx !== -1) handlers.splice(idx, 1);
+			}
+			return true;
+		},
 		// Test helper: simulate receiving a raw IRC line
 		simulateMessage(line: string) {
-			for (const h of handlers) {
+			for (const h of [...handlers]) {
 				h(line);
 			}
 		}

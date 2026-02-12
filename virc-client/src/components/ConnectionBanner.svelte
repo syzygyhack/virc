@@ -6,7 +6,7 @@
 </script>
 
 {#if visible}
-	<div class="connection-banner">
+	<div class="connection-banner" role="alert" aria-live="assertive">
 		<span class="banner-dot"></span>
 		<span class="banner-text">
 			Connection lost. Reconnecting...
@@ -25,7 +25,7 @@
 		gap: 8px;
 		padding: 6px 16px;
 		background: var(--warning, #e6a817);
-		color: #1a1a1a;
+		color: var(--surface-lowest, #1a1a1a);
 		font-size: var(--font-sm);
 		font-weight: var(--weight-medium);
 		animation: banner-pulse 2s ease-in-out infinite;
@@ -37,7 +37,7 @@
 		width: 6px;
 		height: 6px;
 		border-radius: 50%;
-		background: #1a1a1a;
+		background: var(--surface-lowest, #1a1a1a);
 		opacity: 0.7;
 		animation: dot-blink 1.4s ease-in-out infinite;
 	}

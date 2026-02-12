@@ -187,13 +187,13 @@
         </button>
 
         {#if !group.collapsed}
-          <div class="role-members">
+          <div class="role-members" role="list">
             {#each group.members as member (member.nick)}
               {@const presence = presenceInfo(member)}
               {@const color = getMemberColor(member)}
-              <!-- svelte-ignore a11y_no_static_element_interactions -->
               <div
                 class="member-row"
+                role="listitem"
                 oncontextmenu={(e) => handleContextMenu(e, member.nick)}
               >
                 <span class="presence-dot {presence.className}">{presence.dot}</span>
@@ -209,15 +209,15 @@
 
 <!-- Context menu -->
 {#if contextMenu}
-  <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="context-menu"
+    role="menu"
     style="left: {contextMenu.x}px; top: {contextMenu.y}px;"
     onclick={(e) => e.stopPropagation()}
+    onkeydown={(e) => { if (e.key === 'Escape') closeContextMenu(); }}
   >
-    <button class="context-item" onclick={handleSendMessage}>Send Message</button>
-    <button class="context-item" onclick={handleMention}>Mention</button>
+    <button class="context-item" role="menuitem" onclick={handleSendMessage}>Send Message</button>
+    <button class="context-item" role="menuitem" onclick={handleMention}>Mention</button>
   </div>
 {/if}
 

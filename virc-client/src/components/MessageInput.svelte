@@ -18,11 +18,14 @@
 		reply?: ReplyContext | null;
 		oncancelreply?: () => void;
 		oneditlast?: () => void;
+		editing?: boolean;
+		oneditcomplete?: () => void;
+		oneditcancel?: () => void;
 		disconnected?: boolean;
 		rateLimitSeconds?: number;
 	}
 
-	let { target, connection, reply = null, oncancelreply, oneditlast, disconnected = false, rateLimitSeconds = 0 }: Props = $props();
+	let { target, connection, reply = null, oncancelreply, oneditlast, editing = false, oneditcomplete, oneditcancel, disconnected = false, rateLimitSeconds = 0 }: Props = $props();
 
 	let text = $state('');
 	let textarea: HTMLTextAreaElement | undefined = $state();
@@ -69,6 +72,7 @@
 	onDestroy(() => {
 		window.removeEventListener('virc:edit-message', handleEditMessage);
 		window.removeEventListener('virc:insert-mention', handleInsertMention);
+		clearTypingTimer();
 	});
 
 	let statusMessage = $derived(() => {
@@ -188,7 +192,6 @@
 		// Restore cursor after the wrapped text
 		requestAnimationFrame(() => {
 			if (!textarea) return;
-			const newEnd = end + wrapper.length * 2;
 			textarea.setSelectionRange(start + wrapper.length, end + wrapper.length);
 			textarea.focus();
 		});
@@ -220,6 +223,11 @@
 			connection.send(`${tags} PRIVMSG ${target} :${ircText}`);
 		} else {
 			privmsg(connection, target, ircText);
+		}
+
+		// If we were editing, redact the original message now that the edit is sent
+		if (editing) {
+			oneditcomplete?.();
 		}
 
 		text = '';
@@ -271,11 +279,20 @@
 			}
 		}
 
-		// Escape cancels reply
-		if (event.key === 'Escape' && reply) {
-			event.preventDefault();
-			cancelReply();
-			return;
+		// Escape cancels reply or edit
+		if (event.key === 'Escape') {
+			if (editing) {
+				event.preventDefault();
+				text = '';
+				oneditcancel?.();
+				requestAnimationFrame(adjustHeight);
+				return;
+			}
+			if (reply) {
+				event.preventDefault();
+				cancelReply();
+				return;
+			}
 		}
 
 		// Enter sends, Shift+Enter inserts newline
@@ -302,7 +319,7 @@
 
 <div class="message-input-container">
 	{#if statusMessage()}
-		<div class="input-status-bar" class:input-status-warning={rateLimitSeconds > 0} class:input-status-offline={disconnected}>
+		<div class="input-status-bar" class:input-status-warning={rateLimitSeconds > 0} class:input-status-offline={disconnected} role="status" aria-live="polite">
 			{statusMessage()}
 		</div>
 	{/if}

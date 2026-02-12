@@ -39,7 +39,7 @@
 </script>
 
 {#if displayText}
-	<div class="typing-indicator">
+	<div class="typing-indicator" role="status" aria-live="polite">
 		<span class="typing-dots">
 			<span class="dot"></span>
 			<span class="dot"></span>

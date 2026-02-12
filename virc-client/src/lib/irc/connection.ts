@@ -112,6 +112,19 @@ export class IRCConnection {
 		this.listeners.set(event, handlers);
 	}
 
+	/**
+	 * Remove a previously registered event handler.
+	 * Returns true if the handler was found and removed, false otherwise.
+	 */
+	off(event: EventName, handler: (...args: any[]) => void): boolean {
+		const handlers = this.listeners.get(event);
+		if (!handlers) return false;
+		const idx = handlers.indexOf(handler);
+		if (idx === -1) return false;
+		handlers.splice(idx, 1);
+		return true;
+	}
+
 	private emit(event: EventName, ...args: any[]): void {
 		const handlers = this.listeners.get(event);
 		if (handlers) {

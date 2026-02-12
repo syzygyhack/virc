@@ -16,18 +16,14 @@
 </script>
 
 {#if visible}
-	<!-- svelte-ignore a11y_click_events_have_key_events -->
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div class="auth-overlay">
-		<!-- svelte-ignore a11y_click_events_have_key_events -->
-		<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div class="auth-overlay" role="dialog" aria-modal="true" aria-labelledby="auth-expired-title">
 		<div class="auth-dialog">
 			<div class="auth-icon">
 				<svg width="40" height="40" viewBox="0 0 40 40" fill="currentColor">
 					<path d="M20 2a18 18 0 110 36A18 18 0 0120 2zm0 25.2a2.2 2.2 0 100 4.4 2.2 2.2 0 000-4.4zM21.8 9h-3.6l.5 14h2.6l.5-14z"/>
 				</svg>
 			</div>
-			<h3 class="auth-title">Session Expired</h3>
+			<h3 id="auth-expired-title" class="auth-title">Session Expired</h3>
 			<p class="auth-text">Session expired. Please log in again.</p>
 			<button class="auth-btn" onclick={handleLogin}>Log In</button>
 		</div>

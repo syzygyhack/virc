@@ -63,6 +63,7 @@
   let showSidebar = $state(false);
   let innerWidth = $state(0);
   let error: string | null = $state(null);
+  let voiceError: string | null = $state(null);
 
   // Responsive breakpoints
   let isDesktop = $derived(innerWidth > 1200);
@@ -136,8 +137,9 @@
       }
     }
 
-    // Clear reply/emoji state on channel switch
+    // Clear reply/emoji/edit state on channel switch
     replyContext = null;
+    editingMsgid = null;
     emojiPickerTarget = null;
     emojiPickerPosition = null;
     deleteTarget = null;
@@ -327,6 +329,10 @@
       }
     } catch (e) {
       console.error('Voice connection failed:', e);
+      const msg = e instanceof Error ? e.message : String(e);
+      voiceError = `Voice connection failed: ${msg}`;
+      // Auto-clear the error after 5 seconds
+      setTimeout(() => { voiceError = null; }, 5_000);
     }
   }
 
@@ -576,9 +582,14 @@
     }
   }
 
+  // Track the msgid being edited — redaction deferred until user confirms send
+  let editingMsgid: string | null = $state(null);
+
   /**
    * "Edit" the last message by the current user:
-   * For MVP, populate the input with the last message text (delete + retype).
+   * Populates the input with the message text. The original message is only
+   * redacted when the user actually sends the edited text (or discarded if
+   * the user cancels / clears the input).
    */
   function editLastMessage(): void {
     const channel = channelUIState.activeChannel;
@@ -591,11 +602,8 @@
     for (let i = msgs.length - 1; i >= 0; i--) {
       const m = msgs[i];
       if (m.nick === nick && m.type === 'privmsg' && !m.isRedacted) {
-        // Delete the original via REDACT and populate input
-        if (conn) {
-          redact(conn, channel, m.msgid);
-          redactMessage(channel, m.msgid);
-        }
+        // Store the msgid for deferred redaction on send
+        editingMsgid = m.msgid;
         // Set the input textarea value by dispatching a custom event
         // The MessageInput component will pick this up
         window.dispatchEvent(
@@ -604,6 +612,25 @@
         return;
       }
     }
+  }
+
+  /** Called by MessageInput after a successful send while editing. */
+  function handleEditComplete(): void {
+    if (!editingMsgid || !conn) {
+      editingMsgid = null;
+      return;
+    }
+    const channel = channelUIState.activeChannel;
+    if (channel) {
+      redact(conn, channel, editingMsgid);
+      redactMessage(channel, editingMsgid);
+    }
+    editingMsgid = null;
+  }
+
+  /** Called when the user cancels editing (Escape or clearing input). */
+  function handleEditCancel(): void {
+    editingMsgid = null;
   }
 
   /** Send a TOPIC command when the user edits the channel topic. */
@@ -797,9 +824,7 @@
 
   <!-- Sidebar overlay backdrop -->
   {#if sidebarIsOverlay && showSidebar}
-    <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="overlay-backdrop" onclick={handleOverlayClick}></div>
+    <div class="overlay-backdrop" role="presentation" onclick={handleOverlayClick}></div>
   {/if}
 
   <!-- Center column: Header + Messages + Input -->
@@ -814,6 +839,12 @@
 
     <div class="message-area">
       <ConnectionBanner />
+      {#if voiceError}
+        <div class="voice-error-banner" role="alert">
+          <span>{voiceError}</span>
+          <button class="voice-error-dismiss" onclick={() => (voiceError = null)} aria-label="Dismiss">&times;</button>
+        </div>
+      {/if}
       <ErrorBoundary>
         {#if error}
           <div class="error-banner">
@@ -849,6 +880,9 @@
         reply={replyContext}
         oncancelreply={handleCancelReply}
         oneditlast={editLastMessage}
+        editing={editingMsgid !== null}
+        oneditcomplete={handleEditComplete}
+        oneditcancel={handleEditCancel}
         disconnected={isDisconnected}
         {rateLimitSeconds}
       />
@@ -870,9 +904,7 @@
 
   <!-- Member list overlay backdrop -->
   {#if !isDesktop && showMembers && !isActiveDM}
-    <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="overlay-backdrop member-overlay-backdrop" onclick={handleOverlayClick}></div>
+    <div class="overlay-backdrop member-overlay-backdrop" role="presentation" onclick={handleOverlayClick}></div>
   {/if}
 </div>
 
@@ -896,13 +928,9 @@
 
 <!-- Delete confirmation dialog -->
 {#if deleteTarget}
-  <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="delete-overlay" onclick={handleCancelDelete}>
-    <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="delete-overlay" role="dialog" aria-modal="true" aria-labelledby="delete-dialog-title" onclick={handleCancelDelete} onkeydown={(e) => { if (e.key === 'Escape') handleCancelDelete(); }}>
     <div class="delete-dialog" onclick={(e) => e.stopPropagation()}>
-      <h3 class="delete-title">Delete Message</h3>
+      <h3 id="delete-dialog-title" class="delete-title">Delete Message</h3>
       <p class="delete-text">Are you sure you want to delete this message? This cannot be undone.</p>
       <div class="delete-actions">
         <button class="btn-cancel" onclick={handleCancelDelete}>Cancel</button>
@@ -1005,6 +1033,29 @@
     color: #fff;
     font-size: var(--font-sm);
     font-weight: var(--weight-medium);
+  }
+
+  .voice-error-banner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 6px 16px;
+    background: rgba(224, 64, 64, 0.15);
+    color: var(--danger);
+    font-size: var(--font-sm);
+    font-weight: var(--weight-medium);
+    flex-shrink: 0;
+  }
+
+  .voice-error-dismiss {
+    background: none;
+    border: none;
+    color: var(--danger);
+    font-size: var(--font-lg);
+    cursor: pointer;
+    padding: 0 4px;
+    line-height: 1;
   }
 
   /* Branded splash screen for initial connection */

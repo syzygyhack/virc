@@ -58,9 +58,11 @@
 	});
 </script>
 
-<!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
 	class="emoji-picker"
+	role="dialog"
+	aria-modal="true"
+	aria-label="Emoji picker"
 	bind:this={pickerEl}
 	onkeydown={handleKeydown}
 >

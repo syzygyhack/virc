@@ -120,14 +120,15 @@
           />
         {:else if channelInfo?.topic}
           <span class="divider"></span>
-          <!-- svelte-ignore a11y_click_events_have_key_events -->
-          <!-- svelte-ignore a11y_no_static_element_interactions -->
           <span
             class="topic"
             class:topic-expanded={topicExpanded}
             class:topic-editable={isOp()}
             title={topicExpanded ? undefined : channelInfo.topic}
+            role="button"
+            tabindex="0"
             onclick={handleTopicClick}
+            onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleTopicClick(); } }}
           >{channelInfo.topic}</span>
         {/if}
       {/if}

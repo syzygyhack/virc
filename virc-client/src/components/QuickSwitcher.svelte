@@ -122,9 +122,7 @@
 	}
 </script>
 
-<!-- svelte-ignore a11y_click_events_have_key_events -->
-<!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="quick-switcher-overlay" onclick={handleOverlayClick}>
+<div class="quick-switcher-overlay" role="dialog" aria-modal="true" aria-label="Quick channel switcher" onclick={handleOverlayClick}>
 	<div class="quick-switcher">
 		<input
 			bind:this={inputEl}
@@ -132,16 +130,21 @@
 			class="switcher-input"
 			type="text"
 			placeholder="Where would you like to go?"
+			role="combobox"
+			aria-expanded="true"
+			aria-controls="switcher-listbox"
+			aria-activedescendant={results().length > 0 ? `switcher-item-${selectedIndex}` : undefined}
 			onkeydown={handleKeydown}
 		/>
 
-		<div class="switcher-results">
+		<div class="switcher-results" id="switcher-listbox" role="listbox">
 			{#each results() as item, i (item.name)}
-				<!-- svelte-ignore a11y_click_events_have_key_events -->
-				<!-- svelte-ignore a11y_no_static_element_interactions -->
 				<div
+					id="switcher-item-{i}"
 					class="switcher-item"
 					class:selected={i === selectedIndex}
+					role="option"
+					aria-selected={i === selectedIndex}
 					onclick={() => selectItem(item)}
 					onmouseenter={() => (selectedIndex = i)}
 				>

@@ -186,25 +186,30 @@
   function waitForWelcome(conn: IRCConnection): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => {
+        conn.off('message', handler);
         reject(new Error('Timed out waiting for server welcome'));
       }, 15_000);
 
-      conn.on('message', (line: string) => {
+      function handler(line: string): void {
         const msg = parseMessage(line);
 
         // 001 = RPL_WELCOME
         if (msg.command === '001') {
           clearTimeout(timeout);
+          conn.off('message', handler);
           resolve();
         }
 
         // 432 = ERR_ERRONEUSNICKNAME, 433 = ERR_NICKNAMEINUSE, 436 = ERR_NICKCOLLISION
         if (msg.command === '432' || msg.command === '433' || msg.command === '436') {
           clearTimeout(timeout);
+          conn.off('message', handler);
           const reason = msg.params[msg.params.length - 1] || 'Nickname error';
           reject(new Error(reason));
         }
-      });
+      }
+
+      conn.on('message', handler);
     });
   }
 
@@ -215,10 +220,11 @@
   function waitForRegistration(conn: IRCConnection): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => {
+        conn.off('message', handler);
         reject(new Error('Timed out waiting for registration confirmation'));
       }, 15_000);
 
-      conn.on('message', (line: string) => {
+      function handler(line: string): void {
         const msg = parseMessage(line);
 
         // NickServ responses come as NOTICE from NickServ
@@ -241,6 +247,7 @@
           lowerText.includes('you have been successfully')
         ) {
           clearTimeout(timeout);
+          conn.off('message', handler);
           resolve();
         }
 
@@ -252,9 +259,12 @@
           lowerText.includes('invalid')
         ) {
           clearTimeout(timeout);
+          conn.off('message', handler);
           reject(new Error(text));
         }
-      });
+      }
+
+      conn.on('message', handler);
     });
   }
 

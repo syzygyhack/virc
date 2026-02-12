@@ -24,8 +24,12 @@
     toggleDeafen(room);
   }
 
-  function handleDisconnect(): void {
-    disconnectVoice(room);
+  async function handleDisconnect(): Promise<void> {
+    try {
+      await disconnectVoice(room);
+    } catch (e) {
+      console.error('Disconnect failed:', e);
+    }
   }
 </script>
 

@@ -88,3 +88,79 @@ export function removeChannel(name: string): void {
 export function resetChannels(): void {
 	channelState.channels.clear();
 }
+
+// ---------------------------------------------------------------------------
+// UI-level channel state: active channel, categories, DM conversations
+// ---------------------------------------------------------------------------
+
+export interface ChannelCategory {
+	name: string;
+	channels: string[];
+	collapsed: boolean;
+	voice?: boolean;
+}
+
+export interface DMConversation {
+	nick: string;
+	lastMessage?: string;
+}
+
+interface ChannelUIStore {
+	activeChannel: string | null;
+	categories: ChannelCategory[];
+	dmConversations: DMConversation[];
+}
+
+/** Reactive UI state for sidebar — components read this directly. */
+export const channelUIState: ChannelUIStore = $state({
+	activeChannel: null,
+	categories: [],
+	dmConversations: [],
+});
+
+/** Set the active channel. */
+export function setActiveChannel(name: string | null): void {
+	channelUIState.activeChannel = name;
+}
+
+/** Get the active channel name, or null. */
+export function getActiveChannel(): string | null {
+	return channelUIState.activeChannel;
+}
+
+/**
+ * Set categories from virc.json. Each category starts expanded.
+ */
+export function setCategories(cats: Array<{ name: string; channels: string[]; voice?: boolean }>): void {
+	channelUIState.categories = cats.map((c) => ({
+		name: c.name,
+		channels: c.channels,
+		collapsed: false,
+		voice: c.voice,
+	}));
+}
+
+/** Toggle a category's collapsed state. */
+export function toggleCategory(name: string): void {
+	const cat = channelUIState.categories.find((c) => c.name === name);
+	if (cat) {
+		cat.collapsed = !cat.collapsed;
+	}
+}
+
+/** Add a DM conversation to the sidebar. */
+export function addDMConversation(nick: string, lastMessage?: string): void {
+	const existing = channelUIState.dmConversations.find((d) => d.nick === nick);
+	if (existing) {
+		if (lastMessage !== undefined) existing.lastMessage = lastMessage;
+	} else {
+		channelUIState.dmConversations.push({ nick, lastMessage });
+	}
+}
+
+/** Reset UI state. */
+export function resetChannelUI(): void {
+	channelUIState.activeChannel = null;
+	channelUIState.categories.length = 0;
+	channelUIState.dmConversations.length = 0;
+}

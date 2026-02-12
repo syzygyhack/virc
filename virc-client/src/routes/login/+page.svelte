@@ -64,10 +64,14 @@
       // 6. Start JWT refresh timer
       startTokenRefresh(filesUrl);
 
-      // 7. Disconnect this temporary connection (chat page will create its own)
+      // 7. Store server URLs for chat page reconnect
+      sessionStorage.setItem('virc:serverUrl', serverUrl);
+      sessionStorage.setItem('virc:filesUrl', filesUrl);
+
+      // 8. Disconnect this temporary connection (chat page will create its own)
       conn.disconnect();
 
-      // 8. Navigate to /chat
+      // 9. Navigate to /chat
       await goto('/chat');
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -151,6 +155,9 @@
       statusMessage = 'Fetching session token...';
       await fetchToken(filesUrl, username, password);
       startTokenRefresh(filesUrl);
+
+      sessionStorage.setItem('virc:serverUrl', serverUrl);
+      sessionStorage.setItem('virc:filesUrl', filesUrl);
 
       conn.disconnect();
       await goto('/chat');

@@ -3,37 +3,48 @@
  *
  * Tracks which nicks are currently online based on MONITOR responses
  * (RPL_MONONLINE 730 / RPL_MONOFFLINE 731).
+ *
+ * Uses a version counter for Set reactivity (Svelte 5 $state doesn't
+ * deeply track Map/Set mutations).
  */
 
-interface PresenceStore {
-	online: Set<string>; // nicks currently online
+// --- Internal storage (non-reactive) ---
+const _online = new Set<string>();
+let _version = $state(0);
+
+function notify(): void {
+	_version++;
 }
 
-/** Reactive presence store — components read this directly. */
-export const presenceState: PresenceStore = $state({
-	online: new Set(),
-});
+// Legacy export for direct access
+export const presenceState = {
+	get online() { void _version; return _online; },
+};
 
 /** Mark nicks as online. */
 export function setOnline(nicks: string[]): void {
 	for (const nick of nicks) {
-		presenceState.online.add(nick);
+		_online.add(nick);
 	}
+	notify();
 }
 
 /** Mark nicks as offline. */
 export function setOffline(nicks: string[]): void {
 	for (const nick of nicks) {
-		presenceState.online.delete(nick);
+		_online.delete(nick);
 	}
+	notify();
 }
 
 /** Check if a nick is online. */
 export function isOnline(nick: string): boolean {
-	return presenceState.online.has(nick);
+	void _version;
+	return _online.has(nick);
 }
 
 /** Reset all presence state. */
 export function resetPresence(): void {
-	presenceState.online.clear();
+	_online.clear();
+	notify();
 }

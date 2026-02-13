@@ -4,10 +4,11 @@
 	import { negotiateCaps } from '$lib/irc/cap';
 	import { authenticateSASL } from '$lib/irc/sasl';
 	import { registerHandler, resetHandlerState } from '$lib/irc/handler';
-	import { join, chathistory, markread, tagmsg, redact, privmsg, topic, monitor } from '$lib/irc/commands';
+	import { join, chathistory, markread, tagmsg, redact, privmsg, topic, monitor, who } from '$lib/irc/commands';
 	import { getCredentials, getToken, fetchToken, startTokenRefresh, stopTokenRefresh } from '$lib/api/auth';
-	import { connectToVoice, disconnectVoice } from '$lib/voice/room';
-	import { voiceState, toggleMute, toggleDeafen } from '$lib/state/voice.svelte';
+	import { connectToVoice, disconnectVoice, toggleMute as toggleMuteRoom, toggleDeafen as toggleDeafenRoom } from '$lib/voice/room';
+	import { voiceState, updateParticipant } from '$lib/state/voice.svelte';
+	import { audioSettings } from '$lib/state/audioSettings.svelte';
 	import type { Room } from 'livekit-client';
 	import {
 		setConnecting,
@@ -20,6 +21,7 @@
 	import {
 		channelUIState,
 		channelState,
+		getChannel,
 		setActiveChannel,
 		setCategories,
 		isDMTarget,
@@ -31,7 +33,6 @@
 	import type { Message } from '$lib/state/messages.svelte';
 	import { addServer, getActiveServer } from '$lib/state/servers.svelte';
 	import { installGlobalHandler, registerKeybindings } from '$lib/keybindings';
-	import ServerList from '../../components/ServerList.svelte';
 	import ChannelSidebar from '../../components/ChannelSidebar.svelte';
 	import HeaderBar from '../../components/HeaderBar.svelte';
 	import MessageList from '../../components/MessageList.svelte';
@@ -41,6 +42,7 @@
 	import EmojiPicker from '../../components/EmojiPicker.svelte';
 	import QuickSwitcher from '../../components/QuickSwitcher.svelte';
 	import AuthExpiredModal from '../../components/AuthExpiredModal.svelte';
+	import UserSettings from '../../components/UserSettings.svelte';
 	import ErrorBoundary from '../../components/ErrorBoundary.svelte';
 	import ConnectionBanner from '../../components/ConnectionBanner.svelte';
 
@@ -48,6 +50,7 @@
 	interface VircConfig {
 		name?: string;
 		icon?: string;
+		filesUrl?: string;
 		channels?: {
 			categories?: Array<{
 				name: string;
@@ -64,12 +67,10 @@
 	let innerWidth = $state(0);
 	let error: string | null = $state(null);
 	let voiceError: string | null = $state(null);
+	let initializing = $state(true);
 
 	// Responsive breakpoints
 	let isDesktop = $derived(innerWidth > 1200);
-	let isTablet = $derived(innerWidth > 900 && innerWidth <= 1200);
-	let isNarrow = $derived(innerWidth > 600 && innerWidth <= 900);
-	let isMobile = $derived(innerWidth <= 600);
 	let sidebarIsOverlay = $derived(innerWidth <= 900);
 
 	// Reply state
@@ -90,12 +91,58 @@
 	// Quick switcher state
 	let showQuickSwitcher = $state(false);
 
+	// Settings modal state
+	let showSettings = $state(false);
+
 	// Auth expiry state
 	let authExpired = $state(false);
 
 	// Rate limit state
 	let rateLimitSeconds = $state(0);
 	let rateLimitTimer: ReturnType<typeof setInterval> | null = null;
+
+	// MONITOR tracking: nicks currently being monitored for presence
+	let monitoredNicks = new Set<string>();
+
+	/**
+	* Update MONITOR list for the given channel.
+	* Adds nicks in the channel's member list that aren't already monitored,
+	* removes nicks no longer in the active channel (except DM nicks).
+	* Also sends WHO to get initial away status.
+	*/
+	function updateMonitorForChannel(channel: string): void {
+		if (!conn) return;
+		// DM targets are monitored individually, not via channel membership
+		if (isDMTarget(channel)) return;
+
+		const chInfo = getChannel(channel);
+		if (!chInfo) return;
+
+		const currentNicks = new Set(chInfo.members.keys());
+		// Remove own nick from monitoring
+		const ownNick = userState.nick;
+		if (ownNick) currentNicks.delete(ownNick);
+
+		// Determine nicks to add and remove
+		const toAdd = [...currentNicks].filter((n) => !monitoredNicks.has(n));
+		const toRemove = [...monitoredNicks].filter((n) => !currentNicks.has(n));
+
+		// Keep DM nicks in the monitor list
+		const dmNicks = new Set(channelUIState.dmConversations.map((d) => d.nick));
+		const actualRemove = toRemove.filter((n) => !dmNicks.has(n));
+
+		if (actualRemove.length > 0) {
+			monitor(conn, '-', actualRemove);
+			for (const n of actualRemove) monitoredNicks.delete(n);
+		}
+		if (toAdd.length > 0) {
+			monitor(conn, '+', toAdd);
+			for (const n of toAdd) monitoredNicks.add(n);
+		}
+
+		// Send WHO to get initial away status for the channel
+		who(conn, channel);
+	}
 
 	// Derived: is the active channel a DM?
 	let isActiveDM = $derived(
@@ -137,6 +184,9 @@
 			}
 		}
 
+		// Update MONITOR list for presence tracking in the new channel
+		updateMonitorForChannel(channel);
+
 		// Clear reply/emoji/edit state on channel switch
 		replyContext = null;
 		editingMsgid = null;
@@ -144,6 +194,53 @@
 		emojiPickerTarget = null;
 		emojiPickerPosition = null;
 		deleteTarget = null;
+	});
+
+	/**
+	 * Effect: re-run MONITOR when NAMES completes for the active channel.
+	 * If the user switches to a channel before NAMES finishes, the member list
+	 * is empty and no nicks get monitored. This catches that case.
+	 *
+	 * Tracks which channel we last ran MONITOR for after NAMES, so we only
+	 * fire once per channel (not on every unrelated channel state change).
+	 */
+	let monitoredAfterNames: string | null = null;
+	$effect(() => {
+		const channel = channelUIState.activeChannel;
+		if (!channel || isDMTarget(channel)) return;
+		const ch = getChannel(channel);
+		if (!ch?.namesLoaded) {
+			// Reset tracker when switching to a channel whose names haven't loaded
+			if (monitoredAfterNames !== channel) monitoredAfterNames = null;
+			return;
+		}
+		if (monitoredAfterNames === channel) return; // Already ran for this channel
+		monitoredAfterNames = channel;
+		updateMonitorForChannel(channel);
+	});
+
+	/**
+	 * Effect: auto-register #general with ChanServ when joining a fresh server.
+	 * If no member has founder (~) mode after NAMES completes, the channel is
+	 * unregistered — register it so the first user becomes channel owner.
+	 */
+	let hasAttemptedRegister = false;
+	$effect(() => {
+		if (hasAttemptedRegister || !conn) return;
+		const ch = getChannel('#general');
+		if (!ch || !ch.namesLoaded) return;
+
+		let hasFounder = false;
+		for (const member of ch.members.values()) {
+			if (member.prefix.includes('~')) {
+				hasFounder = true;
+				break;
+			}
+		}
+		if (hasFounder) return;
+
+		hasAttemptedRegister = true;
+		conn.send('CS REGISTER #general');
 	});
 
 	function toggleMembers(): void {
@@ -296,12 +393,14 @@
 		}
 
 		try {
-			// 1. Request microphone permission.
-			await navigator.mediaDevices.getUserMedia({ audio: true });
+			// 1. Request microphone permission (stop immediately — LiveKit opens its own stream).
+			const permStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+			for (const track of permStream.getTracks()) track.stop();
 
 			// 2. Fetch LiveKit token from virc-files.
 			const server = getActiveServer();
 			if (!server) throw new Error('No active server');
+			if (!server.filesUrl) throw new Error('Voice requires a files server');
 
 			const jwt = getToken();
 			if (!jwt) throw new Error('Not authenticated');
@@ -322,6 +421,7 @@
 			const data = (await res.json()) as { token: string; url: string };
 
 			// 3. Connect to the LiveKit room.
+			// connectToVoice respects audioSettings.pushToTalk — mic starts muted in PTT mode.
 			voiceRoom = await connectToVoice(channel, data.url, data.token);
 
 			// 4. JOIN the IRC voice channel for presence.
@@ -364,12 +464,15 @@
 		const creds = getCredentials();
 		if (!creds) return;
 
-		// Rehydrate user state from sessionStorage
+		// Rehydrate user state from localStorage
 		rehydrate();
 
-		// Determine server URLs from sessionStorage
-		const serverUrl = sessionStorage.getItem('virc:serverUrl') ?? 'ws://localhost:8097';
-		const filesUrl = sessionStorage.getItem('virc:filesUrl') ?? 'http://localhost:8080';
+		// Determine server URLs from localStorage
+		const defaultWsUrl = import.meta.env.DEV
+			? `ws://${window.location.hostname}:8097`
+			: `ws://${window.location.host}/ws`;
+		const serverUrl = localStorage.getItem('virc:serverUrl') ?? defaultWsUrl;
+		const filesUrl = localStorage.getItem('virc:filesUrl') ?? null;
 
 		error = null;
 
@@ -384,26 +487,30 @@
 			registerHandler(conn);
 
 			// 3. CAP negotiation + NICK/USER
+			// CAP LS must be sent before NICK/USER to prevent premature registration
+			const capPromise = negotiateCaps(conn);
 			conn.send(`NICK ${creds.account}`);
 			conn.send(`USER ${creds.account} 0 * :${creds.account}`);
-			await negotiateCaps(conn);
+			await capPromise;
 
 			// 4. SASL authentication
 			await authenticateSASL(conn, creds.account, creds.password);
 
 			// 4b. Fetch initial JWT and start refresh loop with auth expiry detection
-			try {
-				await fetchToken(filesUrl, creds.account, creds.password);
-				startTokenRefresh(filesUrl, () => {
-					authExpired = true;
-				});
-			} catch {
-				// JWT fetch failure at startup is not fatal — file uploads won't work
-				// but chat still functions. Auth expiry modal fires on refresh failure.
+			if (filesUrl) {
+				try {
+					await fetchToken(filesUrl, creds.account, creds.password);
+					startTokenRefresh(filesUrl, () => {
+						authExpired = true;
+					});
+				} catch {
+					// JWT fetch failure at startup is not fatal — file uploads won't work
+					// but chat still functions. Auth expiry modal fires on refresh failure.
+				}
 			}
 
 			// 5. Fetch virc.json
-			const config = await fetchVircConfig(filesUrl);
+			const config = filesUrl ? await fetchVircConfig(filesUrl) : null;
 
 			// 6. Register server in state
 			const serverName = config?.name ?? 'IRC Server';
@@ -413,7 +520,7 @@
 				name: serverName,
 				url: serverUrl,
 				filesUrl,
-				icon: serverIcon ? `${filesUrl}${serverIcon}` : null,
+				icon: serverIcon && filesUrl ? `${filesUrl}${serverIcon}` : null,
 			});
 
 			// 7. Populate categories from virc.json
@@ -428,7 +535,18 @@
 				join(conn, allChannels);
 			}
 
-			// 9. Set first text channel as active
+			// 9. Fetch initial message history for all text channels.
+			// CHATHISTORY LATEST loads the most recent messages from the server.
+			// This runs immediately after JOIN so message buffers are populated
+			// before the UI renders (no empty channel flash on app restart).
+			const textChannels = categories
+				.filter((cat) => !cat.voice)
+				.flatMap((cat) => cat.channels);
+			for (const channel of textChannels) {
+				chathistory(conn, 'LATEST', channel, '*', '50');
+			}
+
+			// 10. Set first text channel as active
 			const firstTextCategory = categories.find((cat) => !cat.voice);
 			const firstChannel = firstTextCategory?.channels[0] ?? allChannels[0];
 			if (firstChannel) {
@@ -443,10 +561,13 @@
 			conn.on('reconnected', () => {
 				handleReconnect(filesUrl);
 			});
+
+			initializing = false;
 		} catch (e) {
 			const msg = e instanceof Error ? e.message : String(e);
 			error = msg;
 			setDisconnected(msg);
+			initializing = false;
 		}
 	}
 
@@ -454,7 +575,7 @@
 	* Handle a successful WebSocket reconnect.
 	* Re-authenticates, rejoins channels, fills message gaps, and refreshes JWT.
 	*/
-	async function handleReconnect(filesUrl: string): Promise<void> {
+	async function handleReconnect(filesUrl: string | null): Promise<void> {
 		if (!conn) return;
 
 		const creds = getCredentials();
@@ -467,19 +588,22 @@
 			// 1. Re-register message handler on the new WebSocket
 			registerHandler(conn);
 
-			// 2. NICK/USER + CAP negotiation
+			// 2. CAP negotiation + NICK/USER
+			const capPromise = negotiateCaps(conn);
 			conn.send(`NICK ${creds.account}`);
 			conn.send(`USER ${creds.account} 0 * :${creds.account}`);
-			await negotiateCaps(conn);
+			await capPromise;
 
 			// 3. SASL re-authentication
 			await authenticateSASL(conn, creds.account, creds.password);
 
 			// 4. Refresh virc-files JWT
-			try {
-				await fetchToken(filesUrl, creds.account, creds.password);
-			} catch {
-				// Non-fatal — chat still works without JWT
+			if (filesUrl) {
+				try {
+					await fetchToken(filesUrl, creds.account, creds.password);
+				} catch {
+					// Non-fatal — chat still works without JWT
+				}
 			}
 
 			// 5. Re-join all previously joined channels
@@ -490,19 +614,29 @@
 				join(conn, joinedChannels);
 			}
 
-			// 6. Fill message gaps via CHATHISTORY AFTER for each channel
+			// 6. Fill message gaps or load initial history for each channel
 			for (const channel of joinedChannels) {
 				const cursors = getCursors(channel);
 				if (cursors.newestMsgid) {
+					// Have existing messages — fill the gap since last known message
 					chathistory(conn, 'AFTER', channel, `msgid=${cursors.newestMsgid}`, '50');
+				} else {
+					// No messages in buffer — fetch latest history
+					chathistory(conn, 'LATEST', channel, '*', '50');
 				}
 			}
 
 			// 7. Re-establish MONITOR for presence tracking
-			// Collect all unique nicks from DM conversations for monitoring
+			monitoredNicks.clear();
 			const dmNicks = channelUIState.dmConversations.map((dm) => dm.nick);
 			if (dmNicks.length > 0) {
 				monitor(conn, '+', dmNicks);
+				for (const n of dmNicks) monitoredNicks.add(n);
+			}
+			// Also monitor active channel members
+			const activeChannel = channelUIState.activeChannel;
+			if (activeChannel && !isDMTarget(activeChannel)) {
+				updateMonitorForChannel(activeChannel);
 			}
 
 			// 8. Refresh voice connection if was in a voice channel
@@ -670,6 +804,16 @@
 				},
 				description: 'Open quick channel switcher',
 			},
+			// Ctrl+, — User settings
+			{
+				key: ',',
+				ctrl: true,
+				handler: () => {
+					showSettings = !showSettings;
+					return true;
+				},
+				description: 'Open user settings',
+			},
 			// Alt+ArrowUp — Previous channel
 			{
 				key: 'ArrowUp',
@@ -716,6 +860,10 @@
 			{
 				key: 'Escape',
 				handler: () => {
+					if (showSettings) {
+						showSettings = false;
+						return true;
+					}
 					if (showQuickSwitcher) {
 						showQuickSwitcher = false;
 						return true;
@@ -753,8 +901,8 @@
 				ctrl: true,
 				shift: true,
 				handler: () => {
-					if (voiceState.isConnected) {
-						toggleMute();
+					if (voiceState.isConnected && voiceRoom) {
+						toggleMuteRoom(voiceRoom);
 						return true;
 					}
 					return false;
@@ -767,8 +915,8 @@
 				ctrl: true,
 				shift: true,
 				handler: () => {
-					if (voiceState.isConnected) {
-						toggleDeafen();
+					if (voiceState.isConnected && voiceRoom) {
+						toggleDeafenRoom(voiceRoom);
 						return true;
 					}
 					return false;
@@ -785,13 +933,87 @@
 		cleanupGlobalHandler = null;
 	}
 
+	// --- Push-to-talk ---
+
+	let pttActive = false;
+
+	function handlePTTKeyDown(e: KeyboardEvent): void {
+		if (!audioSettings.pushToTalk || !voiceState.isConnected || !voiceRoom) return;
+		if (e.code !== audioSettings.pttKey) return;
+		if (pttActive) return; // Key repeat
+		// Don't capture when typing in inputs
+		const tag = (e.target as HTMLElement)?.tagName;
+		if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+		e.preventDefault();
+		pttActive = true;
+		voiceRoom.localParticipant.setMicrophoneEnabled(true);
+		voiceState.localMuted = false;
+		updateParticipant(voiceRoom.localParticipant.identity, { isMuted: false });
+	}
+
+	function handlePTTKeyUp(e: KeyboardEvent): void {
+		if (!audioSettings.pushToTalk || !voiceRoom) return;
+		if (e.code !== audioSettings.pttKey) return;
+		if (!pttActive) return;
+		releasePTT();
+	}
+
+	/** Release PTT — shared by keyup and window blur. */
+	function releasePTT(): void {
+		if (!pttActive || !voiceRoom) return;
+		pttActive = false;
+		voiceRoom.localParticipant.setMicrophoneEnabled(false);
+		voiceState.localMuted = true;
+		updateParticipant(voiceRoom.localParticipant.identity, { isMuted: true });
+	}
+
+	/** Release PTT when window loses focus (keyup won't fire). */
+	function handleWindowBlur(): void {
+		if (pttActive) releasePTT();
+	}
+
+	// Sync output volume to all remote audio tracks when slider changes.
+	$effect(() => {
+		const vol = audioSettings.outputVolume / 100;
+		if (!voiceRoom) return;
+		for (const p of voiceRoom.remoteParticipants.values()) {
+			for (const pub of p.trackPublications.values()) {
+				if (pub.track && pub.track.kind === 'audio') {
+					(pub.track as any).setVolume?.(vol);
+				}
+			}
+		}
+	});
+
+	// Switch input device when changed in settings while connected.
+	$effect(() => {
+		const deviceId = audioSettings.inputDeviceId;
+		if (!voiceRoom) return;
+		voiceRoom.switchActiveDevice('audioinput', deviceId)
+			.catch((err) => console.error('[virc] Failed to switch input device:', err));
+	});
+
+	// Switch output device when changed in settings while connected.
+	$effect(() => {
+		const deviceId = audioSettings.outputDeviceId;
+		if (!voiceRoom) return;
+		voiceRoom.switchActiveDevice('audiooutput', deviceId)
+			.catch((err) => console.error('[virc] Failed to switch output device:', err));
+	});
+
 	onMount(() => {
 		setupKeybindings();
+		document.addEventListener('keydown', handlePTTKeyDown);
+		document.addEventListener('keyup', handlePTTKeyUp);
+		window.addEventListener('blur', handleWindowBlur);
 		initConnection();
 	});
 
 	onDestroy(() => {
 		teardownKeybindings();
+		document.removeEventListener('keydown', handlePTTKeyDown);
+		document.removeEventListener('keyup', handlePTTKeyUp);
+		window.removeEventListener('blur', handleWindowBlur);
 		stopTokenRefresh();
 
 		if (rateLimitTimer) {
@@ -819,10 +1041,9 @@
 <svelte:window bind:innerWidth={innerWidth} />
 
 <div class="chat-layout">
-	<!-- Left column: Server list + Channel sidebar -->
+	<!-- Left column: Channel sidebar -->
 	<div class="left-panel" class:overlay={sidebarIsOverlay} class:visible={sidebarIsOverlay && showSidebar}>
-		<ServerList />
-		<ChannelSidebar onVoiceChannelClick={handleVoiceChannelClick} {voiceRoom} />
+		<ChannelSidebar onVoiceChannelClick={handleVoiceChannelClick} {voiceRoom} onSettingsClick={() => (showSettings = true)} />
 	</div>
 
 	<!-- Sidebar overlay backdrop -->
@@ -853,7 +1074,7 @@
 					<div class="error-banner">
 						<span>Connection error: {error}</span>
 					</div>
-				{:else if connectionState.status === 'connecting'}
+				{:else if connectionState.status === 'connecting' || initializing}
 					<div class="splash-screen">
 						<div class="splash-spinner"></div>
 						<span class="splash-text">Connecting to server...</span>
@@ -945,6 +1166,11 @@
 
 <!-- Auth expiry modal -->
 <AuthExpiredModal visible={authExpired} />
+
+<!-- User Settings modal -->
+{#if showSettings}
+	<UserSettings onclose={() => (showSettings = false)} connection={conn} />
+{/if}
 
 <style>
 	.chat-layout {

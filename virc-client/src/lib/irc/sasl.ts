@@ -10,16 +10,36 @@ import { parseMessage } from './parser';
  *
  * Sends `CAP END` after successful authentication.
  */
+const SASL_TIMEOUT_MS = 10_000;
+
 export function authenticateSASL(
 	conn: IRCConnection,
 	account: string,
 	password: string
 ): Promise<void> {
 	return new Promise<void>((resolve, reject) => {
-		let phase: 'wait-plus' | 'wait-result' | 'done' = 'wait-plus';
+		let settled = false;
+
+		const timeout = setTimeout(() => {
+			if (!settled) {
+				settled = true;
+				cleanup();
+				reject(new Error('SASL authentication timed out'));
+			}
+		}, SASL_TIMEOUT_MS);
+
+		function settle(fn: () => void): void {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timeout);
+			cleanup();
+			fn();
+		}
+
+		let phase: 'wait-plus' | 'wait-result' = 'wait-plus';
 
 		function handler(line: string) {
-			if (phase === 'done') return;
+			if (settled) return;
 
 			const msg = parseMessage(line);
 
@@ -37,25 +57,37 @@ export function authenticateSASL(
 			if (phase === 'wait-result') {
 				// 903 = RPL_SASLSUCCESS
 				if (msg.command === '903') {
-					phase = 'done';
-					conn.off('message', handler);
 					conn.send('CAP END');
-					resolve();
+					settle(() => resolve());
 					return;
 				}
 
 				// 904 = ERR_SASLFAIL, 905 = ERR_SASLTOOLONG
 				if (msg.command === '904' || msg.command === '905') {
-					phase = 'done';
-					conn.off('message', handler);
 					const reason = msg.params[msg.params.length - 1] || 'SASL authentication failed';
-					reject(new Error(reason));
+					settle(() => reject(new Error(reason)));
 					return;
 				}
 			}
 		}
 
+		function onClose() {
+			settle(() => reject(new Error('Connection closed during SASL authentication')));
+		}
+
+		function onError() {
+			settle(() => reject(new Error('Connection error during SASL authentication')));
+		}
+
+		function cleanup() {
+			conn.off('message', handler);
+			conn.off('close', onClose);
+			conn.off('error', onError);
+		}
+
 		conn.on('message', handler);
+		conn.on('close', onClose);
+		conn.on('error', onError);
 		conn.send('AUTHENTICATE PLAIN');
 	});
 }

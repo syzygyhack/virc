@@ -6,6 +6,7 @@
 	import { parseMessage } from '$lib/irc/parser';
 	import { login } from '$lib/state/user.svelte';
 	import { fetchToken, startTokenRefresh } from '$lib/api/auth';
+	import { discoverFilesUrl } from '$lib/api/discovery';
 	import {
 		setConnecting,
 		setConnected,
@@ -13,8 +14,17 @@
 	} from '$lib/state/connection.svelte';
 
 	let mode: 'login' | 'register' = $state('login');
-	let serverUrl = $state('ws://localhost:8097');
-	let filesUrl = $state('http://localhost:8080');
+
+	function defaultServerUrl(): string {
+		if (typeof window === 'undefined') return 'ws://localhost/ws';
+		// In dev mode, connect directly to Ergo's exposed WebSocket port
+		// to bypass the Vite proxy (which has issues relaying WebSocket frames on Windows).
+		// In production, Caddy proxies /ws to Ergo.
+		if (import.meta.env.DEV) return `ws://${window.location.hostname}:8097`;
+		return `ws://${window.location.host}/ws`;
+	}
+
+	let serverUrl = $state(defaultServerUrl());
 	let username = $state('');
 	let password = $state('');
 	let loading = $state(false);
@@ -44,11 +54,13 @@
 			await conn.connect();
 			setConnected();
 
-			// 2. CAP negotiation
+			// 2. CAP negotiation — CAP LS must precede NICK/USER to prevent
+			// the server from completing registration before caps are negotiated.
 			statusMessage = 'Negotiating capabilities...';
+			const capPromise = negotiateCaps(conn);
 			conn.send(`NICK ${username}`);
 			conn.send(`USER ${username} 0 * :${username}`);
-			await negotiateCaps(conn);
+			await capPromise;
 
 			// 3. SASL PLAIN authentication
 			statusMessage = 'Authenticating...';
@@ -57,21 +69,32 @@
 			// 4. Store credentials in session
 			login(username, password);
 
-			// 5. Fetch JWT from virc-files
-			statusMessage = 'Fetching session token...';
-			await fetchToken(filesUrl, username, password);
+			// 5. Discover files API and fetch JWT
+			statusMessage = 'Discovering server configuration...';
+			const discoveredFilesUrl = await discoverFilesUrl(serverUrl);
 
-			// 6. Start JWT refresh timer
-			startTokenRefresh(filesUrl);
+			if (discoveredFilesUrl) {
+				statusMessage = 'Fetching session token...';
+				try {
+					await fetchToken(discoveredFilesUrl, username, password);
+					startTokenRefresh(discoveredFilesUrl);
+				} catch {
+					// JWT fetch failure is non-fatal — chat works without it
+				}
+			}
 
-			// 7. Store server URLs for chat page reconnect
-			sessionStorage.setItem('virc:serverUrl', serverUrl);
-			sessionStorage.setItem('virc:filesUrl', filesUrl);
+			// 6. Store server URLs for chat page reconnect
+			localStorage.setItem('virc:serverUrl', serverUrl);
+			if (discoveredFilesUrl) {
+				localStorage.setItem('virc:filesUrl', discoveredFilesUrl);
+			} else {
+				localStorage.removeItem('virc:filesUrl');
+			}
 
-			// 8. Disconnect this temporary connection (chat page will create its own)
+			// 7. Disconnect this temporary connection (chat page will create its own)
 			conn.disconnect();
 
-			// 9. Navigate to /chat
+			// 8. Navigate to /chat
 			await goto('/chat');
 		} catch (e) {
 			const msg = e instanceof Error ? e.message : String(e);
@@ -116,9 +139,10 @@
 
 			// 2. CAP negotiation + NICK/USER registration
 			statusMessage = 'Negotiating capabilities...';
+			const regCapPromise = negotiateCaps(conn);
 			conn.send(`NICK ${username}`);
 			conn.send(`USER ${username} 0 * :${username}`);
-			await negotiateCaps(conn);
+			await regCapPromise;
 
 			// 3. End CAP negotiation (no SASL yet for registration)
 			conn.send('CAP END');
@@ -143,21 +167,35 @@
 			setConnected();
 
 			statusMessage = 'Negotiating capabilities...';
+			const loginCapPromise = negotiateCaps(conn);
 			conn.send(`NICK ${username}`);
 			conn.send(`USER ${username} 0 * :${username}`);
-			await negotiateCaps(conn);
+			await loginCapPromise;
 
 			statusMessage = 'Authenticating...';
 			await authenticateSASL(conn, username, password);
 
 			login(username, password);
 
-			statusMessage = 'Fetching session token...';
-			await fetchToken(filesUrl, username, password);
-			startTokenRefresh(filesUrl);
+			statusMessage = 'Discovering server configuration...';
+			const discoveredFilesUrl = await discoverFilesUrl(serverUrl);
 
-			sessionStorage.setItem('virc:serverUrl', serverUrl);
-			sessionStorage.setItem('virc:filesUrl', filesUrl);
+			if (discoveredFilesUrl) {
+				statusMessage = 'Fetching session token...';
+				try {
+					await fetchToken(discoveredFilesUrl, username, password);
+					startTokenRefresh(discoveredFilesUrl);
+				} catch {
+					// JWT fetch failure is non-fatal
+				}
+			}
+
+			localStorage.setItem('virc:serverUrl', serverUrl);
+			if (discoveredFilesUrl) {
+				localStorage.setItem('virc:filesUrl', discoveredFilesUrl);
+			} else {
+				localStorage.removeItem('virc:filesUrl');
+			}
 
 			conn.disconnect();
 			await goto('/chat');
@@ -311,18 +349,7 @@
 					type="text"
 					bind:value={serverUrl}
 					disabled={loading}
-					placeholder="ws://localhost:8097"
-				/>
-			</div>
-
-			<div class="field">
-				<label for="files-url">Files Server URL</label>
-				<input
-					id="files-url"
-					type="text"
-					bind:value={filesUrl}
-					disabled={loading}
-					placeholder="http://localhost:8080"
+					placeholder="ws://localhost/ws"
 				/>
 			</div>
 

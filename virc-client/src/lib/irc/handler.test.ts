@@ -108,6 +108,21 @@ describe('TAGMSG handling', () => {
 		expect(msg!.reactions.get('👍')!.has('bob')).toBe(true);
 	});
 
+	it('toggles reaction off when same account reacts again', () => {
+		// Add a message
+		handle('@msgid=msg2;account=alice :alice!a@host PRIVMSG #test :hi');
+
+		// First reaction — adds
+		handle('@+draft/react=❤️;+draft/reply=msg2;account=carol :carol!c@host TAGMSG #test');
+		let msg = getMessage('#test', 'msg2');
+		expect(msg!.reactions.get('❤️')!.has('carol')).toBe(true);
+
+		// Same reaction from same account — removes (toggle)
+		handle('@+draft/react=❤️;+draft/reply=msg2;account=carol :carol!c@host TAGMSG #test');
+		msg = getMessage('#test', 'msg2');
+		expect(msg!.reactions.has('❤️')).toBe(false);
+	});
+
 	it('handles +typing=active', () => {
 		handle('@+typing=active :alice!a@host TAGMSG #test');
 		expect(typingState.channels.get('#test')?.has('alice')).toBe(true);
@@ -316,6 +331,45 @@ describe('registerHandler', () => {
 		const msgs = getMessages('#test');
 		expect(msgs).toHaveLength(1);
 		expect(msgs[0].msgid).toBe('reg1');
+	});
+});
+
+describe('PING/PONG keepalive', () => {
+	it('responds to server PING with PONG', () => {
+		const handlers: ((line: string) => void)[] = [];
+		const conn = {
+			send: vi.fn(),
+			on(event: string, handler: (...args: any[]) => void) {
+				if (event === 'message') {
+					handlers.push(handler as (line: string) => void);
+				}
+			},
+			off: vi.fn(),
+		} as unknown as IRCConnection;
+
+		registerHandler(conn);
+		expect(handlers).toHaveLength(1);
+
+		// Server sends PING
+		handlers[0]('PING :virc.local');
+		expect(conn.send).toHaveBeenCalledWith('PONG :virc.local');
+	});
+
+	it('responds to PING with timestamp token', () => {
+		const handlers: ((line: string) => void)[] = [];
+		const conn = {
+			send: vi.fn(),
+			on(event: string, handler: (...args: any[]) => void) {
+				if (event === 'message') {
+					handlers.push(handler as (line: string) => void);
+				}
+			},
+			off: vi.fn(),
+		} as unknown as IRCConnection;
+
+		registerHandler(conn);
+		handlers[0]('PING :1234567890');
+		expect(conn.send).toHaveBeenCalledWith('PONG :1234567890');
 	});
 });
 
@@ -531,6 +585,64 @@ describe('MODE handling', () => {
 		handle(':server MODE alice +i');
 		// No channel messages should be created
 		expect(getMessages('alice')).toHaveLength(0);
+	});
+
+	it('updates member modes on +o', () => {
+		handle(':server 353 me = #test :alice bob');
+		handle(':server 366 me #test :End of /NAMES list');
+		handle(':server MODE #test +o alice');
+
+		const member = getMember('#test', 'alice');
+		expect(member).not.toBeNull();
+		expect(member!.modes).toContain('@');
+		expect(member!.highestMode).toBe('@');
+
+		// Simple channel member should also be updated
+		const ch = getChannel('#test');
+		expect(ch!.members.get('alice')!.prefix).toContain('@');
+	});
+
+	it('removes member modes on -o', () => {
+		handle(':server 353 me = #test :@alice bob');
+		handle(':server 366 me #test :End of /NAMES list');
+		handle(':server MODE #test -o alice');
+
+		const member = getMember('#test', 'alice');
+		expect(member!.modes).not.toContain('@');
+		expect(member!.highestMode).toBeNull();
+
+		const ch = getChannel('#test');
+		expect(ch!.members.get('alice')!.prefix).not.toContain('@');
+	});
+
+	it('handles compound mode changes like +ov nick1 nick2', () => {
+		handle(':server 353 me = #test :alice bob');
+		handle(':server 366 me #test :End of /NAMES list');
+		handle(':server MODE #test +ov alice bob');
+
+		expect(getMember('#test', 'alice')!.highestMode).toBe('@');
+		expect(getMember('#test', 'bob')!.highestMode).toBe('+');
+	});
+
+	it('handles +q for founder (~)', () => {
+		handle(':server 353 me = #test :alice');
+		handle(':server 366 me #test :End of /NAMES list');
+		handle(':ChanServ!ChanServ@localhost MODE #test +q alice');
+
+		const member = getMember('#test', 'alice');
+		expect(member!.modes).toContain('~');
+		expect(member!.highestMode).toBe('~');
+	});
+
+	it('handles mixed +/- in one mode string', () => {
+		handle(':server 353 me = #test :@alice +bob');
+		handle(':server 366 me #test :End of /NAMES list');
+		handle(':server MODE #test -o+v alice alice');
+
+		const member = getMember('#test', 'alice');
+		expect(member!.modes).not.toContain('@');
+		expect(member!.modes).toContain('+');
+		expect(member!.highestMode).toBe('+');
 	});
 });
 

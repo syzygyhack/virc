@@ -144,7 +144,7 @@ describe('IRCConnection', () => {
 			expect(messages).toEqual([':server PING :test']);
 		});
 
-		it('buffers partial lines until \\r\\n is received', async () => {
+		it('handles bare WebSocket frames without CRLF (Ergo style)', async () => {
 			const conn = new IRCConnection({ url: 'ws://localhost:8097' });
 			const connectPromise = conn.connect();
 			latestMockWs().simulateOpen();
@@ -153,10 +153,7 @@ describe('IRCConnection', () => {
 			const messages: string[] = [];
 			conn.on('message', (line: string) => messages.push(line));
 
-			latestMockWs().simulateMessage(':server PING');
-			expect(messages).toEqual([]);
-
-			latestMockWs().simulateMessage(' :test\r\n');
+			latestMockWs().simulateMessage(':server PING :test');
 			expect(messages).toEqual([':server PING :test']);
 		});
 

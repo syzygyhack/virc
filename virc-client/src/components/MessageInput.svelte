@@ -1,8 +1,12 @@
 <script lang="ts">
 	import { markdownToIRC } from '$lib/irc/format';
 	import type { IRCConnection } from '$lib/irc/connection';
-	import { privmsg, tagmsg, join, part, topic } from '$lib/irc/commands';
+	import { privmsg, tagmsg, part, topic } from '$lib/irc/commands';
 	import { formatMessage } from '$lib/irc/parser';
+	import SlashCommandMenu from './SlashCommandMenu.svelte';
+	import { filterCommands, type CommandDef } from './SlashCommandMenu.svelte';
+	import { getMember } from '$lib/state/members.svelte';
+	import { userState } from '$lib/state/user.svelte';
 
 	interface ReplyContext {
 		msgid: string;
@@ -31,6 +35,65 @@
 	let textarea: HTMLTextAreaElement | undefined = $state();
 
 	let inputDisabled = $derived(disconnected || rateLimitSeconds > 0);
+
+	// --- Slash command menu state ---
+
+	let slashFilter = $derived.by(() => {
+		const match = text.match(/^\/(\S*)$/);
+		return match ? match[1] : null;
+	});
+
+	let myHighestMode = $derived(
+		target.startsWith('#') && userState.nick
+			? getMember(target, userState.nick)?.highestMode ?? null
+			: null
+	);
+	let filteredCommands = $derived(slashFilter !== null ? filterCommands(slashFilter, myHighestMode) : []);
+	let showSlashMenu = $derived(slashFilter !== null && filteredCommands.length > 0);
+	let slashSelectedIndex = $state(0);
+
+	// Reset selection when filter changes
+	$effect(() => {
+		void slashFilter;
+		slashSelectedIndex = 0;
+	});
+
+	function handleSlashSelect(cmd: CommandDef): void {
+		text = `/${cmd.name} `;
+		requestAnimationFrame(() => {
+			textarea?.focus();
+			if (textarea) {
+				textarea.selectionStart = textarea.selectionEnd = text.length;
+			}
+		});
+	}
+
+	function handleSlashMenuKeydown(event: KeyboardEvent): boolean {
+		if (!showSlashMenu || filteredCommands.length === 0) return false;
+
+		if (event.key === 'ArrowDown') {
+			event.preventDefault();
+			slashSelectedIndex = (slashSelectedIndex + 1) % filteredCommands.length;
+			return true;
+		}
+		if (event.key === 'ArrowUp') {
+			event.preventDefault();
+			slashSelectedIndex = (slashSelectedIndex - 1 + filteredCommands.length) % filteredCommands.length;
+			return true;
+		}
+		if (event.key === 'Tab' || event.key === 'Enter') {
+			event.preventDefault();
+			handleSlashSelect(filteredCommands[slashSelectedIndex]);
+			return true;
+		}
+		if (event.key === 'Escape') {
+			event.preventDefault();
+			// Add space to break the menu match
+			text = text + ' ';
+			return true;
+		}
+		return false;
+	}
 
 	// Listen for programmatic edit-message events (from keyboard shortcut: Up arrow)
 	function handleEditMessage(e: Event): void {
@@ -75,7 +138,7 @@
 		clearTypingTimer();
 	});
 
-	let statusMessage = $derived(() => {
+	let statusMessage = $derived.by(() => {
 		if (disconnected) return "You're offline. Reconnecting...";
 		if (rateLimitSeconds > 0) return `Slow down! You can send another message in ${rateLimitSeconds}s.`;
 		return null;
@@ -140,14 +203,40 @@
 				// ACTION: send as CTCP ACTION
 				connection.send(formatMessage('PRIVMSG', target, `\x01ACTION ${args}\x01`));
 				return true;
-			case 'join':
+			case 'msg': {
+				const msgMatch = args.match(/^(\S+)\s+(.*)/);
+				if (msgMatch) {
+					privmsg(connection, msgMatch[1], msgMatch[2]);
+				}
+				return true;
+			}
+			case 'nick':
 				if (args.trim()) {
-					join(connection, args.trim().split(/[,\s]+/));
+					connection.send(formatMessage('NICK', args.trim()));
 				}
 				return true;
 			case 'part': {
-				const partTarget = args.trim() || target;
-				part(connection, partTarget);
+				const partArgs = args.trim();
+				let partTarget: string;
+				let reason: string | undefined;
+				if (!partArgs) {
+					// /part — leave current channel
+					partTarget = target;
+				} else if (partArgs.startsWith('#') || partArgs.startsWith('&')) {
+					// /part #channel [reason] — leave specified channel
+					const spaceIdx = partArgs.indexOf(' ');
+					if (spaceIdx === -1) {
+						partTarget = partArgs;
+					} else {
+						partTarget = partArgs.slice(0, spaceIdx);
+						reason = partArgs.slice(spaceIdx + 1).trim() || undefined;
+					}
+				} else {
+					// /part reason — leave current channel with reason
+					partTarget = target;
+					reason = partArgs;
+				}
+				part(connection, partTarget, reason);
 				return true;
 			}
 			case 'topic':
@@ -157,18 +246,46 @@
 					topic(connection, target);
 				}
 				return true;
-			case 'nick':
-				if (args.trim()) {
-					connection.send(formatMessage('NICK', args.trim()));
-				}
-				return true;
-			case 'msg': {
-				const msgMatch = args.match(/^(\S+)\s+(.*)/);
-				if (msgMatch) {
-					privmsg(connection, msgMatch[1], msgMatch[2]);
+			case 'invite': {
+				const inviteParts = args.trim().split(/\s+/);
+				const inviteUser = inviteParts[0];
+				const inviteChannel = inviteParts[1] || target;
+				if (inviteUser) {
+					connection.send(formatMessage('INVITE', inviteUser, inviteChannel));
 				}
 				return true;
 			}
+			case 'kick': {
+				const kickMatch = args.match(/^(\S+)\s*(.*)/);
+				if (kickMatch) {
+					const reason = kickMatch[2] || undefined;
+					if (reason) {
+						connection.send(formatMessage('KICK', target, kickMatch[1], reason));
+					} else {
+						connection.send(formatMessage('KICK', target, kickMatch[1]));
+					}
+				}
+				return true;
+			}
+			case 'ban': {
+				const banUser = args.trim();
+				if (banUser) {
+					connection.send(formatMessage('MODE', target, '+b', `${banUser}!*@*`));
+				}
+				return true;
+			}
+			case 'unban': {
+				const unbanUser = args.trim();
+				if (unbanUser) {
+					connection.send(formatMessage('MODE', target, '-b', `${unbanUser}!*@*`));
+				}
+				return true;
+			}
+			case 'mode':
+				if (args.trim()) {
+					connection.send(`MODE ${args.trim()}`);
+				}
+				return true;
 			default:
 				return false;
 		}
@@ -203,8 +320,8 @@
 		const trimmed = text.trim();
 		if (!trimmed || !connection || inputDisabled) return;
 
-		// Check for slash commands
-		if (trimmed.startsWith('/')) {
+		// Check for slash commands (// escapes to send a literal /message)
+		if (trimmed.startsWith('/') && !trimmed.startsWith('//')) {
 			if (handleSlashCommand(trimmed)) {
 				text = '';
 				cancelReply();
@@ -214,8 +331,11 @@
 			}
 		}
 
+		// Strip leading // escape to send literal /text
+		const messageText = trimmed.startsWith('//') ? trimmed.slice(1) : trimmed;
+
 		// Convert markdown to mIRC codes
-		const ircText = markdownToIRC(trimmed);
+		const ircText = markdownToIRC(messageText);
 
 		if (reply) {
 			// Send with reply tag
@@ -249,6 +369,9 @@
 	// --- Key handling ---
 
 	function handleKeydown(event: KeyboardEvent): void {
+		// Let slash command menu handle navigation keys when open
+		if (handleSlashMenuKeydown(event)) return;
+
 		// Formatting shortcuts
 		if ((event.ctrlKey || event.metaKey) && !event.shiftKey) {
 			if (event.key === 'b') {
@@ -297,6 +420,7 @@
 
 		// Enter sends, Shift+Enter inserts newline
 		if (event.key === 'Enter' && !event.shiftKey) {
+			// If slash menu is open, it already handled Enter above
 			event.preventDefault();
 			send();
 			return;
@@ -310,6 +434,18 @@
 		}
 	}
 
+	// Focus the textarea when a reply context is set or channel changes
+	$effect(() => {
+		if (reply) {
+			requestAnimationFrame(() => textarea?.focus());
+		}
+	});
+
+	$effect(() => {
+		void target; // re-run when target (channel) changes
+		requestAnimationFrame(() => textarea?.focus());
+	});
+
 	let placeholder = $derived(
 		target.startsWith('#')
 			? `Message ${target}`
@@ -318,9 +454,9 @@
 </script>
 
 <div class="message-input-container">
-	{#if statusMessage()}
+	{#if statusMessage}
 		<div class="input-status-bar" class:input-status-warning={rateLimitSeconds > 0} class:input-status-offline={disconnected} role="status" aria-live="polite">
-			{statusMessage()}
+			{statusMessage}
 		</div>
 	{/if}
 
@@ -341,6 +477,14 @@
 	{/if}
 
 	<div class="input-row" class:input-disabled={inputDisabled}>
+		{#if showSlashMenu}
+			<SlashCommandMenu
+				commands={filteredCommands}
+				selectedIndex={slashSelectedIndex}
+				onselect={handleSlashSelect}
+				onhover={(i) => slashSelectedIndex = i}
+			/>
+		{/if}
 		<textarea
 			bind:this={textarea}
 			bind:value={text}
@@ -413,6 +557,7 @@
 		background: var(--surface-high);
 		border-radius: 8px;
 		padding: 8px 12px;
+		position: relative;
 	}
 
 	.reply-bar + .input-row {

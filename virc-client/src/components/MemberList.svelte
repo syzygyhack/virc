@@ -42,7 +42,7 @@
 	* Build role groups from member state. Groups members by highest mode,
 	* then splits no-mode members into Online/Offline.
 	*/
-	let roleGroups = $derived((): RoleGroup[] => {
+	let roleGroups = $derived.by((): RoleGroup[] => {
 		const channel = channelUIState.activeChannel;
 		if (!channel) return [];
 
@@ -90,7 +90,7 @@
 	});
 
 	/** Total member count for the header. */
-	let totalMembers = $derived((): number => {
+	let totalMembers = $derived.by((): number => {
 		const channel = channelUIState.activeChannel;
 		if (!channel) return 0;
 		const map = memberState.channels.get(channel);
@@ -170,11 +170,11 @@
 
 <aside class="member-list" aria-label="Members">
 	<div class="member-header">
-		<span class="member-header-text">Members — {totalMembers()}</span>
+		<span class="member-header-text">Members — {totalMembers}</span>
 	</div>
 
 	<div class="member-scroll">
-		{#each roleGroups() as group (group.key)}
+		{#each roleGroups as group (group.key)}
 			<div class="role-group">
 				<button
 					class="role-header"

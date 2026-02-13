@@ -8,33 +8,48 @@ import type { IRCConnection } from './connection';
  */
 function createMockConn() {
 	const sent: string[] = [];
-	const handlers: ((line: string) => void)[] = [];
+	const listeners = new Map<string, ((...args: any[]) => void)[]>();
 
 	const conn = {
 		send(line: string) {
 			sent.push(line);
 		},
 		on(event: string, handler: (...args: any[]) => void) {
-			if (event === 'message') {
-				handlers.push(handler as (line: string) => void);
-			}
+			if (!listeners.has(event)) listeners.set(event, []);
+			listeners.get(event)!.push(handler);
 		},
 		off(event: string, handler: (...args: any[]) => void) {
-			if (event === 'message') {
-				const idx = handlers.indexOf(handler as (line: string) => void);
-				if (idx !== -1) handlers.splice(idx, 1);
-			}
+			const list = listeners.get(event);
+			if (!list) return false;
+			const idx = list.indexOf(handler);
+			if (idx !== -1) list.splice(idx, 1);
 			return true;
 		},
 		// Test helper: simulate receiving a raw IRC line
 		simulateMessage(line: string) {
-			for (const h of [...handlers]) {
+			for (const h of [...(listeners.get('message') ?? [])]) {
 				h(line);
 			}
-		}
-	} as unknown as IRCConnection & { simulateMessage: (line: string) => void };
+		},
+		// Test helper: simulate close event
+		simulateClose() {
+			for (const h of [...(listeners.get('close') ?? [])]) {
+				h();
+			}
+		},
+		// Test helper: simulate error event
+		simulateError() {
+			for (const h of [...(listeners.get('error') ?? [])]) {
+				h();
+			}
+		},
+	} as unknown as IRCConnection & {
+		simulateMessage: (line: string) => void;
+		simulateClose: () => void;
+		simulateError: () => void;
+	};
 
-	return { conn, sent, handlers };
+	return { conn, sent, listeners };
 }
 
 describe('negotiateCaps', () => {
@@ -178,5 +193,36 @@ describe('negotiateCaps', () => {
 		expect(MVP_CAPS).toContain('cap-notify');
 		expect(MVP_CAPS).toContain('setname');
 		expect(MVP_CAPS).toHaveLength(18);
+	});
+
+	it('rejects when connection closes during negotiation', async () => {
+		const { conn } = createMockConn();
+		const promise = negotiateCaps(conn);
+
+		// Simulate connection closing before any CAP response
+		conn.simulateClose();
+
+		await expect(promise).rejects.toThrow('Connection closed during CAP negotiation');
+	});
+
+	it('rejects when connection errors during negotiation', async () => {
+		const { conn } = createMockConn();
+		const promise = negotiateCaps(conn);
+
+		conn.simulateError();
+
+		await expect(promise).rejects.toThrow('Connection error during CAP negotiation');
+	});
+
+	it('rejects on timeout when server never responds', async () => {
+		vi.useFakeTimers();
+		const { conn } = createMockConn();
+		const promise = negotiateCaps(conn);
+
+		// Advance past the 10s timeout
+		vi.advanceTimersByTime(10_001);
+
+		await expect(promise).rejects.toThrow('CAP negotiation timed out');
+		vi.useRealTimers();
 	});
 });

@@ -4,9 +4,46 @@
 		<meta charset="utf-8" />
 		<link rel="icon" href="%sveltekit.assets%/favicon.png" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<style>
+			/* Inline splash — renders before JS loads to prevent white flash */
+			body { margin: 0; background: #1a1a1e; }
+			#app-splash {
+				position: fixed;
+				inset: 0;
+				z-index: 9999;
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				justify-content: center;
+				gap: 16px;
+				background: #1a1a1e;
+				transition: opacity 0.15s ease-out;
+			}
+			#app-splash.hiding { opacity: 0; pointer-events: none; }
+			#app-splash .logo {
+				font-family: 'JetBrains Mono', 'Consolas', monospace;
+				font-size: 32px;
+				font-weight: 700;
+				color: #5b9ef0;
+				letter-spacing: -0.02em;
+			}
+			#app-splash .spinner {
+				width: 24px;
+				height: 24px;
+				border: 3px solid #383a40;
+				border-top-color: #5b9ef0;
+				border-radius: 50%;
+				animation: splash-spin 0.8s linear infinite;
+			}
+			@keyframes splash-spin { to { transform: rotate(360deg); } }
+		</style>
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">
+		<div id="app-splash" aria-hidden="true">
+			<span class="logo">virc</span>
+			<div class="spinner"></div>
+		</div>
 		<div style="display: contents">%sveltekit.body%</div>
 	</body>
 </html>

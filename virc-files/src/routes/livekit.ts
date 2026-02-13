@@ -29,7 +29,7 @@ livekit.post("/api/livekit/token", authMiddleware, async (c) => {
   });
 
   const token = await at.toJwt();
-  return c.json({ token, url: env.LIVEKIT_URL });
+  return c.json({ token, url: env.LIVEKIT_CLIENT_URL });
 });
 
 export { livekit };

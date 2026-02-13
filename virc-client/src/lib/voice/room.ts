@@ -10,10 +10,9 @@ import {
 	RoomEvent,
 	Track,
 	type RemoteParticipant,
-	type LocalParticipant,
 	type Participant,
-	type RemoteTrackPublication,
 	type TrackPublication,
+	type AudioCaptureOptions,
 } from 'livekit-client';
 
 import {
@@ -25,6 +24,7 @@ import {
 	removeParticipant,
 	voiceState,
 } from '$lib/state/voice.svelte';
+import { audioSettings } from '$lib/state/audioSettings.svelte';
 
 /**
  * Get the display identity for a participant.
@@ -45,15 +45,43 @@ export async function connectToVoice(
 	livekitUrl: string,
 	token: string,
 ): Promise<Room> {
-	const room = new Room();
+	// Configure room with selected audio devices and processing.
+	const audioCaptureOpts: AudioCaptureOptions = {
+		noiseSuppression: audioSettings.noiseSuppression,
+		// Keep echo cancellation and auto gain — they help in voice chat.
+		echoCancellation: true,
+		autoGainControl: true,
+	};
+	if (audioSettings.inputDeviceId !== 'default') {
+		audioCaptureOpts.deviceId = { exact: audioSettings.inputDeviceId };
+	}
+
+	const room = new Room({
+		audioCaptureDefaults: audioCaptureOpts,
+		audioOutput: audioSettings.outputDeviceId !== 'default'
+			? { deviceId: audioSettings.outputDeviceId }
+			: undefined,
+	});
 
 	// Wire up event listeners before connecting so we don't miss early events.
 	setupRoomEvents(room);
 
 	await room.connect(livekitUrl, token);
 
-	// Enable local microphone.
-	await room.localParticipant.setMicrophoneEnabled(true);
+	// Enable local microphone with selected device.
+	// If push-to-talk is active, start muted to avoid a brief open-mic window.
+	const startMuted = audioSettings.pushToTalk;
+	if (!startMuted) {
+		await room.localParticipant.setMicrophoneEnabled(true, audioCaptureOpts);
+	}
+
+	// Mark connected first (clears participant map), then register participants.
+	setConnected(channel);
+
+	// Add local participant to the map.
+	updateParticipant(participantNick(room.localParticipant), {
+		isMuted: startMuted || !room.localParticipant.isMicrophoneEnabled,
+	});
 
 	// Register existing remote participants (may already be in the room).
 	for (const participant of room.remoteParticipants.values()) {
@@ -62,7 +90,6 @@ export async function connectToVoice(
 		});
 	}
 
-	setConnected(channel);
 	return room;
 }
 
@@ -88,6 +115,10 @@ export async function toggleMute(room: Room): Promise<void> {
 	const willMute = !voiceState.localMuted;
 	await room.localParticipant.setMicrophoneEnabled(!willMute);
 	toggleMuteState();
+	// Sync local participant in the participants map.
+	updateParticipant(participantNick(room.localParticipant), {
+		isMuted: willMute,
+	});
 }
 
 /**
@@ -95,6 +126,7 @@ export async function toggleMute(room: Room): Promise<void> {
  *
  * When un-deafening, remote audio is restored. Local mic is only
  * restored if it wasn't independently muted before deafening.
+ * The state layer (toggleDeafenState) tracks wasMutedBeforeDeafen.
  */
 export async function toggleDeafen(room: Room): Promise<void> {
 	const willDeafen = !voiceState.localDeafened;
@@ -107,30 +139,46 @@ export async function toggleDeafen(room: Room): Promise<void> {
 					(pub.track as any).setVolume?.(0);
 					pub.track.detach();
 				} else {
-					(pub.track as any).setVolume?.(1);
+					(pub.track as any).setVolume?.(audioSettings.outputVolume / 100);
 					pub.track.attach();
 				}
 			}
 		}
 	}
 
-	// If deafening, also mute local mic. toggleDeafenState handles this.
 	if (willDeafen) {
 		await room.localParticipant.setMicrophoneEnabled(false);
-	} else {
-		// Un-deafen: restore mic only if user wasn't independently muted.
-		// After toggleDeafenState, localMuted stays true because deafen set it.
-		// We restore mic here; the state update happens in toggleDeafenState.
-		await room.localParticipant.setMicrophoneEnabled(true);
 	}
 
+	// Update state — toggleDeafenState captures/restores wasMutedBeforeDeafen
 	toggleDeafenState();
+
+	// On undeafen, sync LiveKit mic to the restored mute state
+	if (!willDeafen) {
+		await room.localParticipant.setMicrophoneEnabled(!voiceState.localMuted);
+	}
+
+	// Sync local participant in the participants map.
+	updateParticipant(participantNick(room.localParticipant), {
+		isMuted: voiceState.localMuted,
+		isDeafened: voiceState.localDeafened,
+	});
 }
 
 /**
  * Set up LiveKit room event listeners that sync to voiceState.
  */
 function setupRoomEvents(room: Room): void {
+	// Apply output volume to newly subscribed audio tracks.
+	room.on(
+		RoomEvent.TrackSubscribed,
+		(track) => {
+			if (track.kind === Track.Kind.Audio) {
+				(track as any).setVolume?.(audioSettings.outputVolume / 100);
+			}
+		},
+	);
+
 	room.on(RoomEvent.ParticipantConnected, (participant: RemoteParticipant) => {
 		updateParticipant(participantNick(participant), {
 			isMuted: !participant.isMicrophoneEnabled,

@@ -10,7 +10,7 @@ import {
 } from './user.svelte';
 
 /**
- * Minimal sessionStorage mock for Node-based vitest.
+ * Minimal localStorage mock for Node-based vitest.
  */
 function createSessionStorageMock() {
 	const store = new Map<string, string>();
@@ -29,7 +29,7 @@ function createSessionStorageMock() {
 describe('user state', () => {
 	beforeEach(() => {
 		const storage = createSessionStorageMock();
-		vi.stubGlobal('sessionStorage', storage);
+		vi.stubGlobal('localStorage', storage);
 		// Reset state to clean slate
 		logout();
 	});
@@ -76,7 +76,7 @@ describe('user state', () => {
 		expect(userState.account).toBe('alice');
 	});
 
-	it('rehydrate() restores state from sessionStorage', () => {
+	it('rehydrate() restores state from localStorage', () => {
 		login('bob', 'pass123');
 
 		// Simulate state loss (e.g. module re-import after reload)

@@ -1,14 +1,22 @@
 /**
  * Auth helpers for virc-client.
  *
- * Credentials live in sessionStorage (survives reload, cleared on tab close).
- * JWT is stored in a module-level variable (short-lived, not localStorage).
+ * Credentials live in localStorage so they persist across app restarts
+ * (required for Tauri — sessionStorage is cleared when the window closes).
+ * JWT is stored in a module-level variable (short-lived, not persisted).
  *
  * Auth flow:
  *   1. User logs in with account + password
- *   2. Credentials stored in sessionStorage for SASL reconnect / JWT refresh
+ *   2. Credentials stored in localStorage for SASL reconnect / JWT refresh
  *   3. POST /api/auth sends credentials to virc-files, receives JWT
  *   4. JWT auto-refreshes on a 50-minute timer using stored credentials
+ *
+ * Security note: The password is stored in localStorage because SASL PLAIN
+ * requires the plaintext password on every reconnect (there is no persistent
+ * session token for IRC). In Tauri/WebView2, localStorage is sandboxed to
+ * this application and not accessible to other apps. A future improvement
+ * would be to use OS keychain storage (e.g. tauri-plugin-stronghold) for
+ * the password while keeping the account name in localStorage.
  */
 
 const CREDENTIALS_KEY = 'virc:credentials';
@@ -20,26 +28,26 @@ export interface StoredCredentials {
 
 /** Check whether the user has stored credentials (i.e. is "logged in"). */
 export function isAuthenticated(): boolean {
-	if (typeof sessionStorage === 'undefined') return false;
-	return sessionStorage.getItem(CREDENTIALS_KEY) !== null;
+	if (typeof localStorage === 'undefined') return false;
+	return localStorage.getItem(CREDENTIALS_KEY) !== null;
 }
 
 /** Store credentials after successful login. */
 export function storeCredentials(creds: StoredCredentials): void {
-	sessionStorage.setItem(CREDENTIALS_KEY, JSON.stringify(creds));
+	localStorage.setItem(CREDENTIALS_KEY, JSON.stringify(creds));
 }
 
 /** Retrieve stored credentials, or null if not logged in. */
 export function getCredentials(): StoredCredentials | null {
-	if (typeof sessionStorage === 'undefined') return null;
-	const raw = sessionStorage.getItem(CREDENTIALS_KEY);
+	if (typeof localStorage === 'undefined') return null;
+	const raw = localStorage.getItem(CREDENTIALS_KEY);
 	if (!raw) return null;
 	return JSON.parse(raw) as StoredCredentials;
 }
 
 /** Clear credentials (logout). */
 export function clearCredentials(): void {
-	sessionStorage.removeItem(CREDENTIALS_KEY);
+	localStorage.removeItem(CREDENTIALS_KEY);
 }
 
 // ---------------------------------------------------------------------------

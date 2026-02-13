@@ -9,9 +9,11 @@ import type { IRCConnection } from './connection';
 import { parseMessage, type ParsedMessage } from './parser';
 import {
 	addMessage,
+	clearChannel as clearMessages,
 	redactMessage,
 	addReaction,
 	removeReaction,
+	getMessage,
 	prependMessages,
 	appendMessages,
 	getMessages,
@@ -25,13 +27,17 @@ import {
 	removeMemberFromAll,
 	renameMember,
 	getChannelsForNick,
+	getChannel,
 	setTopic,
 	setNamesLoaded,
 	updateDMLastMessage,
 	isDMTarget,
+	getActiveChannel,
+	removeChannel,
+	setActiveChannel,
+	channelUIState,
 } from '../state/channels.svelte';
 import { setOnline, setOffline } from '../state/presence.svelte';
-import { getActiveChannel } from '../state/channels.svelte';
 import { incrementUnread, setLastReadMsgid } from '../state/notifications.svelte';
 import { userState } from '../state/user.svelte';
 import {
@@ -48,6 +54,7 @@ import {
 	updatePresence,
 	setPresenceOffline,
 	getMember as getRichMember,
+	updateMemberModes,
 } from '../state/members.svelte';
 
 /**
@@ -267,6 +274,13 @@ export function handleMessage(parsed: ParsedMessage): void {
 		case '731': // RPL_MONOFFLINE
 			handleMonitorOffline(parsed);
 			break;
+		case 'PING':
+			// Respond to server PING to keep the connection alive
+			if (activeConn) {
+				const token = parsed.params[0] ?? '';
+				activeConn.send(`PONG :${token}`);
+			}
+			break;
 		default:
 			break;
 	}
@@ -311,13 +325,20 @@ function handleTagmsg(parsed: ParsedMessage): void {
 	const target = parsed.params[0];
 	const nick = parsed.source?.nick ?? '';
 
-	// Handle reactions: +draft/react tag
+	// Handle reactions: +draft/react tag (toggle semantics)
 	const reactEmoji = parsed.tags['+draft/react'];
 	if (reactEmoji) {
 		const replyMsgid = parsed.tags['+draft/reply'];
 		if (replyMsgid) {
 			const account = parsed.tags['account'] ?? '';
-			addReaction(target, replyMsgid, reactEmoji, account);
+			// Toggle: if account already reacted with this emoji, remove it
+			const msg = getMessage(target, replyMsgid);
+			const existing = msg?.reactions.get(reactEmoji);
+			if (existing && existing.has(account)) {
+				removeReaction(target, replyMsgid, reactEmoji, account);
+			} else {
+				addReaction(target, replyMsgid, reactEmoji, account);
+			}
 		}
 		return;
 	}
@@ -371,6 +392,20 @@ function handlePart(parsed: ParsedMessage): void {
 	removeMember(channel, nick);
 	removeRichMember(channel, nick);
 
+	if (nick === userState.nick) {
+		// Self-PART: remove channel from sidebar and clear its state
+		clearMessages(channel);
+		removeChannel(channel);
+		if (getActiveChannel() === channel) {
+			// Switch to the first available text channel
+			const textChannels = channelUIState.categories
+				.filter((c) => !c.voice)
+				.flatMap((c) => c.channels);
+			setActiveChannel(textChannels[0] ?? null);
+		}
+		return;
+	}
+
 	// Add system message to channel buffer
 	const reason = parsed.params[1] ? ` (${parsed.params[1]})` : '';
 	const msg = systemMessage('part', channel, nick, `${nick} has left ${channel}${reason}`, parsed);
@@ -418,6 +453,27 @@ function handleNick(parsed: ParsedMessage): void {
 	}
 }
 
+/** Map channel mode letters to their prefix characters. */
+const MODE_TO_PREFIX: Record<string, string> = {
+	q: '~',
+	a: '&',
+	o: '@',
+	h: '%',
+	v: '+',
+};
+
+/**
+ * Channel modes that always consume a parameter.
+ * Without tracking these, paramIdx drifts when the server sends mixed
+ * mode strings like "+bo nick banmask" (ban + op in a single MODE).
+ *
+ * List covers standard RFC 2811 type-A (list) and type-B (always-param)
+ * modes. Type-C modes (param on set only) are handled via `adding`.
+ */
+const PARAM_MODES_ALWAYS = new Set(['b', 'e', 'I', 'k']);
+/** Modes that take a param only when being set (+), not when unset (-). */
+const PARAM_MODES_SET_ONLY = new Set(['l', 'j', 'f']);
+
 function handleMode(parsed: ParsedMessage): void {
 	const channel = parsed.params[0];
 	if (!channel || !channel.startsWith('#')) return; // Only handle channel modes
@@ -427,6 +483,61 @@ function handleMode(parsed: ParsedMessage): void {
 	const text = `${nick} sets mode ${parsed.params.slice(1).join(' ')}`;
 	const msg = systemMessage('mode', channel, nick, text, parsed);
 	addMessage(channel, msg);
+
+	// Parse mode changes and update member state
+	let adding = true;
+	let paramIdx = 2; // params after channel and mode string
+
+	for (const char of modeStr) {
+		if (char === '+') {
+			adding = true;
+			continue;
+		}
+		if (char === '-') {
+			adding = false;
+			continue;
+		}
+
+		const prefix = MODE_TO_PREFIX[char];
+		if (prefix && paramIdx < parsed.params.length) {
+			const targetNick = parsed.params[paramIdx];
+			paramIdx++;
+
+			// Update rich member state
+			const member = getRichMember(channel, targetNick);
+			if (member) {
+				if (adding) {
+					if (!member.modes.includes(prefix)) {
+						member.modes = [...member.modes, prefix];
+					}
+				} else {
+					member.modes = member.modes.filter((m) => m !== prefix);
+				}
+				updateMemberModes(channel, targetNick, member.modes);
+			}
+
+			// Update simple channel member prefix
+			const ch = getChannel(channel);
+			if (ch) {
+				const simpleMember = ch.members.get(targetNick);
+				if (simpleMember) {
+					if (adding) {
+						if (!simpleMember.prefix.includes(prefix)) {
+							simpleMember.prefix += prefix;
+						}
+					} else {
+						simpleMember.prefix = simpleMember.prefix.replace(prefix, '');
+					}
+				}
+			}
+		} else if (PARAM_MODES_ALWAYS.has(char)) {
+			// Consume the parameter even though we don't process this mode
+			paramIdx++;
+		} else if (adding && PARAM_MODES_SET_ONLY.has(char)) {
+			// These modes only take a param when being set
+			paramIdx++;
+		}
+	}
 }
 
 function handleTopic(parsed: ParsedMessage): void {
@@ -496,18 +607,24 @@ function finalizeBatch(batch: BatchState): void {
 			const bufferTarget = batch.messages[0].target;
 			resolvedTarget = bufferTarget;
 
-			// Determine whether to prepend (older history) or append (gap-fill).
-			// Compare the batch's oldest message against the buffer's newest.
+			// Deduplicate: echo-message may have already added some of these
 			const existing = getMessages(bufferTarget);
-			const batchOldest = batch.messages[0].time;
-			const bufferNewest = existing.length > 0 ? existing[existing.length - 1].time : null;
+			const existingIds = new Set(existing.map((m) => m.msgid));
+			const newMessages = batch.messages.filter((m) => !existingIds.has(m.msgid));
 
-			if (bufferNewest && batchOldest > bufferNewest) {
-				// Batch messages are newer than buffer → append (gap-fill / AFTER)
-				appendMessages(bufferTarget, batch.messages);
-			} else {
-				// Batch messages are older than buffer → prepend (BEFORE / LATEST)
-				prependMessages(bufferTarget, batch.messages);
+			if (newMessages.length > 0) {
+				// Determine whether to prepend (older history) or append (gap-fill).
+				// Compare the batch's oldest message against the buffer's newest.
+				const batchOldest = newMessages[0].time;
+				const bufferNewest = existing.length > 0 ? existing[existing.length - 1].time : null;
+
+				if (bufferNewest && batchOldest > bufferNewest) {
+					// Batch messages are newer than buffer → append (gap-fill / AFTER)
+					appendMessages(bufferTarget, newMessages);
+				} else {
+					// Batch messages are older than buffer → prepend (BEFORE / LATEST)
+					prependMessages(bufferTarget, newMessages);
+				}
 			}
 		}
 		// Always signal completion so the UI can clear its loading state,
@@ -685,7 +802,7 @@ export function registerHandler(conn: IRCConnection): void {
 	conn.on('message', activeHandler);
 }
 
-/** Clear all batch and typing state (for testing or reconnect). */
+/** Clear all batch, typing, and handler state (for testing or reconnect). */
 export function resetHandlerState(): void {
 	activeBatches.clear();
 	for (const [, timers] of typingTimers) {
@@ -695,4 +812,6 @@ export function resetHandlerState(): void {
 	}
 	typingTimers.clear();
 	resetTyping();
+	activeHandler = null;
+	activeConn = null;
 }

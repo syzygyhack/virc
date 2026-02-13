@@ -39,16 +39,12 @@
 
 	let color = $derived(nickColor(message.account));
 
-	let renderedText = $derived(() => {
+	let renderedText = $derived.by(() => {
 		if (message.isRedacted) return '';
 		return renderMessage(message.text, userState.account ?? '');
 	});
 
-	let fullTimestamp = $derived(
-		message.time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-	);
-
-	let shortTimestamp = $derived(
+	let timestamp = $derived(
 		message.time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 	);
 
@@ -58,7 +54,7 @@
 		message.replyTo ? getMessage(message.target, message.replyTo) : null
 	);
 
-	let reactionEntries = $derived(() => {
+	let reactionEntries = $derived.by(() => {
 		const entries: { emoji: string; count: number; hasSelf: boolean }[] = [];
 		for (const [emoji, accounts] of message.reactions) {
 			entries.push({
@@ -125,11 +121,9 @@
 					<path d="M6.6 3.4L1.2 7.6a.5.5 0 000 .8l5.4 4.2a.5.5 0 00.8-.4V10c3 0 5.4.8 7 3.6.2.4.6.4.6-.1C15 9.1 12 5.5 7.4 5.2V3.8a.5.5 0 00-.8-.4z"/>
 				</svg>
 			</button>
-			<button class="toolbar-btn" title="More" aria-label="More options" onclick={handleMore}>
+			<button class="toolbar-btn toolbar-btn-danger" title="Delete" aria-label="Delete message" onclick={handleMore}>
 				<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-					<circle cx="4" cy="8" r="1.5"/>
-					<circle cx="8" cy="8" r="1.5"/>
-					<circle cx="12" cy="8" r="1.5"/>
+					<path d="M5.5 1.5A.5.5 0 016 1h4a.5.5 0 01.5.5V2h3a.5.5 0 010 1h-.538l-.853 10.24A1.5 1.5 0 0110.62 14.5H5.38a1.5 1.5 0 01-1.489-1.26L3.038 3H2.5a.5.5 0 010-1h3v-.5zM4.046 3l.84 10.08a.5.5 0 00.497.42h5.236a.5.5 0 00.497-.42L11.954 3H4.046zM6.5 5a.5.5 0 01.5.5v7a.5.5 0 01-1 0v-7a.5.5 0 01.5-.5zm3 0a.5.5 0 01.5.5v7a.5.5 0 01-1 0v-7a.5.5 0 01.5-.5z"/>
 				</svg>
 			</button>
 		</div>
@@ -159,31 +153,31 @@
 			<div class="message-body">
 				<div class="message-meta">
 					<span class="nick" style="color: {color}" role="button" tabindex="0" onclick={handleNickClick} onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleNickClick(); } }}>{message.nick}</span>
-					<span class="timestamp">{fullTimestamp}</span>
+					<span class="timestamp">{timestamp}</span>
 				</div>
 				{#if message.isRedacted}
 					<div class="message-text redacted">[message deleted]</div>
 				{:else}
-					<div class="message-text">{@html renderedText()}</div>
+					<div class="message-text">{@html renderedText}</div>
 				{/if}
 			</div>
 		</div>
 	{:else}
 		<div class="message-grouped-row">
 			<span class="timestamp-gutter" class:visible={hovered}>
-				{shortTimestamp}
+				{timestamp}
 			</span>
 			{#if message.isRedacted}
 				<div class="message-text redacted">[message deleted]</div>
 			{:else}
-				<div class="message-text">{@html renderedText()}</div>
+				<div class="message-text">{@html renderedText}</div>
 			{/if}
 		</div>
 	{/if}
 
-	{#if reactionEntries().length > 0}
+	{#if reactionEntries.length > 0}
 		<div class="reactions-bar">
-			{#each reactionEntries() as entry (entry.emoji)}
+			{#each reactionEntries as entry (entry.emoji)}
 				<button
 					class="reaction-pill"
 					class:reaction-self={entry.hasSelf}
@@ -322,13 +316,21 @@
 		border-radius: 0 3px 3px 0;
 	}
 
+	.toolbar-btn-danger {
+		color: var(--danger);
+	}
+
+	.toolbar-btn-danger:hover {
+		background: rgba(224, 64, 64, 0.15);
+		color: var(--danger);
+	}
+
 	/* Reply Preview */
 	.reply-preview {
 		display: flex;
 		align-items: center;
 		gap: 4px;
-		padding: 0 0 4px 52px;
-		margin-left: 20px;
+		padding: 0 0 4px 0;
 		font-size: var(--font-xs);
 		color: var(--text-secondary);
 		cursor: pointer;

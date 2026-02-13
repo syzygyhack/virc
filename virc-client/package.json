@@ -8,7 +8,10 @@
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "tauri": "cargo tauri",
+    "tauri:dev": "cargo tauri dev",
+    "tauri:build": "cargo tauri build"
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "^3.0.0",
@@ -22,6 +25,7 @@
     "vitest": "^4.0.18"
   },
   "dependencies": {
+    "@tauri-apps/plugin-opener": "^2.5.3",
     "livekit-client": "^2.0.0"
   },
   "type": "module"

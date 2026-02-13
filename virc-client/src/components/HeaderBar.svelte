@@ -25,7 +25,7 @@
 			: false
 	);
 
-	let isVoice = $derived(() => {
+	let isVoice = $derived.by(() => {
 		if (!channelUIState.activeChannel) return false;
 		return channelUIState.categories.some(
 			(cat) => cat.voice && cat.channels.includes(channelUIState.activeChannel!)
@@ -33,7 +33,7 @@
 	});
 
 	/** Whether the current user has op (@) or higher in the active channel. */
-	let isOp = $derived(() => {
+	let isOp = $derived.by(() => {
 		if (!channelUIState.activeChannel || !userState.nick) return false;
 		const member = getMember(channelUIState.activeChannel, userState.nick);
 		if (!member || !member.highestMode) return false;
@@ -46,7 +46,7 @@
 	let editValue = $state('');
 
 	function handleTopicClick(): void {
-		if (isOp()) {
+		if (isOp) {
 			// Enter edit mode
 			topicEditing = true;
 			editValue = channelInfo?.topic ?? '';
@@ -93,7 +93,7 @@
 			<span class="channel-label">
 				{#if isDM}
 					<span class="hash">@</span>
-				{:else if isVoice()}
+				{:else if isVoice}
 					<svg class="channel-type-icon" width="16" height="16" viewBox="0 0 16 16">
 						<path
 							d="M8 1a3 3 0 0 0-3 3v4a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3zM5 8a1 1 0 0 0-2 0 5 5 0 0 0 4 4.9V14H5a1 1 0 0 0 0 2h6a1 1 0 0 0 0-2H9v-1.1A5 5 0 0 0 13 8a1 1 0 0 0-2 0 3 3 0 0 1-6 0z"
@@ -123,7 +123,7 @@
 					<span
 						class="topic"
 						class:topic-expanded={topicExpanded}
-						class:topic-editable={isOp()}
+						class:topic-editable={isOp}
 						title={topicExpanded ? undefined : channelInfo.topic}
 						role="button"
 						tabindex="0"
@@ -136,18 +136,6 @@
 	</div>
 
 	<div class="actions">
-		<button
-			class="action-button"
-			title="Search"
-			aria-label="Search"
-			disabled
-		>
-			<svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-				<circle cx="8" cy="8" r="5.5" stroke="currentColor" stroke-width="1.5" />
-				<path d="M12.5 12.5l3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-			</svg>
-		</button>
-
 		<button
 			class="action-button"
 			class:active={membersVisible}
@@ -283,11 +271,6 @@
 	.action-button.active {
 		color: var(--interactive-active);
 		background: var(--surface-high);
-	}
-
-	.action-button:disabled {
-		opacity: 0.4;
-		cursor: not-allowed;
 	}
 
 	.hamburger-button {

@@ -14,6 +14,9 @@ export const env = {
   get ERGO_API() {
     return optional("ERGO_API", "http://ergo:8089");
   },
+  get ERGO_API_TOKEN() {
+    return optional("ERGO_API_TOKEN", "");
+  },
   get JWT_SECRET() {
     return required("JWT_SECRET");
   },
@@ -25,6 +28,10 @@ export const env = {
   },
   get LIVEKIT_URL() {
     return optional("LIVEKIT_URL", "ws://livekit:7880");
+  },
+  /** Client-facing LiveKit WebSocket URL (returned to browsers). */
+  get LIVEKIT_CLIENT_URL() {
+    return optional("LIVEKIT_CLIENT_URL", "ws://localhost:7880");
   },
   get PORT() {
     return parseInt(optional("PORT", "8080"), 10);

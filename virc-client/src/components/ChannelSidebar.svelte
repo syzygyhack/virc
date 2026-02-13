@@ -1,6 +1,7 @@
 <script lang="ts">
 	import {
 		channelUIState,
+		channelState,
 		setActiveChannel,
 		toggleCategory,
 		type ChannelCategory,
@@ -9,14 +10,39 @@
 	import { voiceState, type VoiceParticipant } from '$lib/state/voice.svelte';
 	import { getUnreadCount, getMentionCount } from '$lib/state/notifications.svelte';
 	import VoicePanel from './VoicePanel.svelte';
+	import UserPanel from './UserPanel.svelte';
 	import type { Room } from 'livekit-client';
 
 	interface Props {
 		onVoiceChannelClick?: (channel: string) => void;
 		voiceRoom?: Room | null;
+		onSettingsClick?: () => void;
 	}
 
-	let { onVoiceChannelClick, voiceRoom = null }: Props = $props();
+	let { onVoiceChannelClick, voiceRoom = null, onSettingsClick }: Props = $props();
+
+	/** Collapsed state for the "Other" category. */
+	let otherCollapsed = $state(false);
+
+	/**
+	* Channels in channelState that don't appear in any virc.json category.
+	* These are shown in the "Other" group at the bottom.
+	*/
+	let otherChannels = $derived.by((): string[] => {
+		const categorized = new Set<string>();
+		for (const cat of channelUIState.categories) {
+			for (const ch of cat.channels) {
+				categorized.add(ch);
+			}
+		}
+		const result: string[] = [];
+		for (const name of channelState.channels.keys()) {
+			if ((name.startsWith('#') || name.startsWith('&')) && !categorized.has(name)) {
+				result.push(name);
+			}
+		}
+		return result.sort();
+	});
 
 	function handleChannelClick(name: string, isVoice: boolean): void {
 		if (isVoice) {
@@ -139,7 +165,14 @@
 											<div class="voice-participant" class:speaking={p.isSpeaking}>
 												<span class="participant-speaking-dot" class:active={p.isSpeaking}></span>
 												<span class="participant-nick">{p.nick}</span>
-												{#if p.isMuted}
+												{#if p.isDeafened}
+													<span class="participant-muted" aria-label="Deafened" title="Deafened">
+														<svg width="12" height="12" viewBox="0 0 24 24">
+															<path d="M3 14v4a2 2 0 0 0 2 2h1a1 1 0 0 0 1-1v-4a1 1 0 0 0-1-1H5a7 7 0 0 1 14 0h-1a1 1 0 0 0-1 1v4a1 1 0 0 0 1 1h1a2 2 0 0 0 2-2v-4a9 9 0 0 0-18 0z" fill="currentColor" opacity="0.5" />
+															<line x1="3" y1="3" x2="21" y2="21" stroke="var(--danger)" stroke-width="2.5" stroke-linecap="round" />
+														</svg>
+													</span>
+												{:else if p.isMuted}
 													<span class="participant-muted" aria-label="Muted" title="Muted">
 														<svg width="12" height="12" viewBox="0 0 24 24">
 															<path d="M12 1a4 4 0 0 0-4 4v6a4 4 0 0 0 8 0V5a4 4 0 0 0-4-4z" fill="currentColor" opacity="0.5" />
@@ -157,10 +190,58 @@
 				{/if}
 			</div>
 		{/each}
+
+		{#if otherChannels.length > 0}
+			<div class="category">
+				<button
+					class="category-header"
+					onclick={() => (otherCollapsed = !otherCollapsed)}
+					aria-expanded={!otherCollapsed}
+					aria-label="Other category"
+				>
+					<svg
+						class="chevron"
+						class:collapsed={otherCollapsed}
+						width="10"
+						height="10"
+						viewBox="0 0 10 10"
+					>
+						<path d="M2 3l3 3 3-3" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" />
+					</svg>
+					<span class="category-name">Other</span>
+				</button>
+
+				{#if !otherCollapsed}
+					<div class="category-channels">
+						{#each otherChannels as ch (ch)}
+							{@const chUnread = getUnreadCount(ch)}
+							{@const chMentions = getMentionCount(ch)}
+							<button
+								class="channel-item"
+								class:active={channelUIState.activeChannel === ch}
+								class:has-unread={chUnread > 0}
+								class:has-mentions={chMentions > 0}
+								onclick={() => handleChannelClick(ch, false)}
+							>
+								<span class="channel-icon hash-icon">#</span>
+								<span class="channel-name">{ch.replace(/^#/, '')}</span>
+								{#if chUnread > 0}
+									<span class="unread-badge" class:mention-badge={chMentions > 0}>
+										{chMentions > 0 ? chMentions : chUnread}
+									</span>
+								{/if}
+							</button>
+						{/each}
+					</div>
+				{/if}
+			</div>
+		{/if}
 	</div>
 
-	{#if voiceState.isConnected && voiceRoom}
-		<VoicePanel room={voiceRoom} />
+	<UserPanel onSettingsClick={() => onSettingsClick?.()} {voiceRoom} />
+
+	{#if voiceState.isConnected}
+		<VoicePanel />
 	{/if}
 </aside>
 

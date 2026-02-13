@@ -3,6 +3,9 @@
  *
  * Tracks per-channel membership, topic, and whether the initial NAMES
  * response has been fully received.
+ *
+ * Uses a version counter for Map reactivity (Svelte 5 $state doesn't
+ * deeply track Map/Set mutations).
  */
 
 export interface ChannelMember {
@@ -18,56 +21,64 @@ export interface ChannelInfo {
 	namesLoaded: boolean;
 }
 
-interface ChannelStore {
-	channels: Map<string, ChannelInfo>;
+// --- Internal storage (non-reactive) ---
+const _channels = new Map<string, ChannelInfo>();
+let _version = $state(0);
+
+function notify(): void {
+	_version++;
 }
 
-/** Reactive channel store — components read this directly. */
-export const channelState: ChannelStore = $state({
-	channels: new Map(),
-});
+// Legacy export for direct access (e.g. ChannelSidebar iterating keys)
+export const channelState = {
+	get channels() { void _version; return _channels; },
+};
 
 function ensureChannel(name: string): ChannelInfo {
-	if (!channelState.channels.has(name)) {
-		channelState.channels.set(name, {
+	if (!_channels.has(name)) {
+		_channels.set(name, {
 			name,
 			topic: '',
 			members: new Map(),
 			namesLoaded: false,
 		});
 	}
-	return channelState.channels.get(name)!;
+	return _channels.get(name)!;
 }
 
 /** Get channel info, or null if not joined. */
 export function getChannel(name: string): ChannelInfo | null {
-	return channelState.channels.get(name) ?? null;
+	void _version;
+	return _channels.get(name) ?? null;
 }
 
 /** Add a member to a channel. */
 export function addMember(channel: string, nick: string, account: string, prefix = ''): void {
 	const ch = ensureChannel(channel);
 	ch.members.set(nick, { nick, account, prefix });
+	notify();
 }
 
 /** Remove a member from a channel. */
 export function removeMember(channel: string, nick: string): void {
-	const ch = channelState.channels.get(channel);
+	const ch = _channels.get(channel);
 	if (ch) {
 		ch.members.delete(nick);
+		notify();
 	}
 }
 
 /** Remove a nick from all channels (used for QUIT). */
 export function removeMemberFromAll(nick: string): void {
-	for (const ch of channelState.channels.values()) {
+	for (const ch of _channels.values()) {
 		ch.members.delete(nick);
 	}
+	notify();
 }
 
 /** Rename a member across all channels (used for NICK). */
 export function renameMember(oldNick: string, newNick: string): void {
-	for (const ch of channelState.channels.values()) {
+	for (const ch of _channels.values()) {
 		const member = ch.members.get(oldNick);
 		if (member) {
 			ch.members.delete(oldNick);
@@ -75,12 +86,14 @@ export function renameMember(oldNick: string, newNick: string): void {
 			ch.members.set(newNick, member);
 		}
 	}
+	notify();
 }
 
 /** Get all channel names where a nick is a member. */
 export function getChannelsForNick(nick: string): string[] {
+	void _version;
 	const channels: string[] = [];
-	for (const ch of channelState.channels.values()) {
+	for (const ch of _channels.values()) {
 		if (ch.members.has(nick)) {
 			channels.push(ch.name);
 		}
@@ -92,24 +105,28 @@ export function getChannelsForNick(nick: string): string[] {
 export function setTopic(channel: string, topic: string): void {
 	const ch = ensureChannel(channel);
 	ch.topic = topic;
+	notify();
 }
 
 /** Mark a channel's NAMES list as fully received. */
 export function setNamesLoaded(channel: string): void {
-	const ch = channelState.channels.get(channel);
+	const ch = _channels.get(channel);
 	if (ch) {
 		ch.namesLoaded = true;
+		notify();
 	}
 }
 
 /** Remove a channel entirely (on PART by self). */
 export function removeChannel(name: string): void {
-	channelState.channels.delete(name);
+	_channels.delete(name);
+	notify();
 }
 
 /** Reset all channel state. */
 export function resetChannels(): void {
-	channelState.channels.clear();
+	_channels.clear();
+	notify();
 }
 
 // ---------------------------------------------------------------------------

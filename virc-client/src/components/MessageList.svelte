@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { tick } from 'svelte';
+	import { tick, untrack } from 'svelte';
 	import { getMessages, getCursors, historyBatch, type Message, type MessageType } from '$lib/state/messages.svelte';
 	import { channelUIState } from '$lib/state/channels.svelte';
 	import { getLastReadMsgid } from '$lib/state/notifications.svelte';
@@ -66,12 +66,12 @@
 	/** Set of collapsed group keys that the user has expanded. */
 	let expandedGroups: Set<string> = $state(new Set());
 
-	/** Messages for the active channel. */
-	let messages = $derived(
-		channelUIState.activeChannel
-			? getMessages(channelUIState.activeChannel)
-			: []
-	);
+	/** Messages for the active channel (shallow copy for Svelte change detection). */
+	let messages = $derived.by(() => {
+		const ch = channelUIState.activeChannel;
+		if (!ch) return [];
+		return getMessages(ch).slice();
+	});
 
 	/**
 	 * The msgid of the first unread message.
@@ -117,7 +117,7 @@
 		| { kind: 'system'; message: Message }
 		| { kind: 'collapsed'; messages: Message[]; key: string };
 
-	let renderEntries = $derived(() => {
+	let renderEntries = $derived.by(() => {
 		const result: RenderEntry[] = [];
 		let i = 0;
 
@@ -301,9 +301,11 @@
 		prevMessageCount = 0;
 		expandedGroups = new Set();
 
-		// Show skeleton placeholders if channel has no cached messages yet
-		const channelMessages = _channel ? getMessages(_channel) : [];
-		isAwaitingInitialMessages = channelMessages.length === 0;
+		// Show skeleton placeholders if channel has no cached messages yet.
+		// Use untrack so this effect only re-runs on channel change, not on
+		// every message addition (getMessages reads the reactive version counter).
+		const cachedMessages = _channel ? untrack(() => getMessages(_channel)) : [];
+		isAwaitingInitialMessages = cachedMessages.length === 0;
 
 		tick().then(() => scrollToBottom());
 	});
@@ -368,7 +370,7 @@
 			</p>
 		</div>
 	{:else}
-		{#each renderEntries() as entry}
+		{#each renderEntries as entry (entry.kind === 'collapsed' ? entry.key : entry.message.msgid)}
 			{#if entry.kind === 'collapsed'}
 				{#if expandedGroups.has(entry.key)}
 					{#each entry.messages as sysMsg (sysMsg.msgid)}

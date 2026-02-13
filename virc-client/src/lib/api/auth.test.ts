@@ -12,7 +12,7 @@ import {
 } from './auth';
 
 /**
- * Minimal sessionStorage mock — vitest runs in Node where sessionStorage
+ * Minimal localStorage mock — vitest runs in Node where localStorage
  * is not available by default.
  */
 function createSessionStorageMock() {
@@ -34,7 +34,7 @@ describe('credential helpers', () => {
 
 	beforeEach(() => {
 		storage = createSessionStorageMock();
-		vi.stubGlobal('sessionStorage', storage);
+		vi.stubGlobal('localStorage', storage);
 	});
 
 	afterEach(() => {
@@ -125,7 +125,7 @@ describe('JWT management', () => {
 
 	it('startTokenRefresh() re-fetches token every 50 minutes', async () => {
 		const storage = createSessionStorageMock();
-		vi.stubGlobal('sessionStorage', storage);
+		vi.stubGlobal('localStorage', storage);
 
 		storeCredentials({ account: 'alice', password: 'hunter2' });
 
@@ -157,7 +157,7 @@ describe('JWT management', () => {
 
 	it('stopTokenRefresh() cancels the timer', async () => {
 		const storage = createSessionStorageMock();
-		vi.stubGlobal('sessionStorage', storage);
+		vi.stubGlobal('localStorage', storage);
 
 		storeCredentials({ account: 'alice', password: 'hunter2' });
 

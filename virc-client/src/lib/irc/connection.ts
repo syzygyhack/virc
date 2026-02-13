@@ -8,6 +8,7 @@ interface IRCConnectionOptions {
 
 const MAX_BACKOFF_MS = 30_000;
 const INITIAL_BACKOFF_MS = 1_000;
+const CONNECT_TIMEOUT_MS = 10_000;
 
 /**
  * Manages a WebSocket connection to an IRC server (e.g. Ergo via ws://).
@@ -38,24 +39,40 @@ export class IRCConnection {
 			this.intentionalClose = false;
 			this.state = 'connecting';
 			this.buffer = '';
+			let settled = false;
+
+			const timeout = setTimeout(() => {
+				if (!settled) {
+					settled = true;
+					this.state = 'disconnected';
+					try { ws.close(); } catch { /* ignore */ }
+					reject(new Error(`WebSocket connect timed out (${this.url})`));
+				}
+			}, CONNECT_TIMEOUT_MS);
 
 			const ws = new WebSocket(this.url);
 			this.ws = ws;
 
 			ws.onopen = () => {
+				if (settled) return;
+				settled = true;
+				clearTimeout(timeout);
 				this.state = 'connected';
 				this.reconnectAttempt = 0;
 				resolve();
 			};
 
 			ws.onmessage = (ev: MessageEvent) => {
-				this.handleData(ev.data as string);
+				if (typeof ev.data === 'string') {
+					this.handleData(ev.data);
+				}
 			};
 
 			ws.onerror = (ev: Event) => {
 				this.emit('error', ev);
-				// If still connecting (not yet opened), reject the promise
-				if (this.state === 'connecting') {
+				if (!settled && this.state === 'connecting') {
+					settled = true;
+					clearTimeout(timeout);
 					reject(new Error('WebSocket connection failed'));
 				}
 			};
@@ -63,8 +80,9 @@ export class IRCConnection {
 			ws.onclose = (ev: CloseEvent) => {
 				this.emit('close', ev);
 
-				if (this.state === 'connecting') {
-					// Reject the connect promise if we haven't resolved yet
+				if (!settled && this.state === 'connecting') {
+					settled = true;
+					clearTimeout(timeout);
 					reject(new Error('WebSocket closed before opening'));
 					return;
 				}
@@ -78,11 +96,13 @@ export class IRCConnection {
 
 	/**
 	 * Send a raw IRC line. Appends \r\n automatically.
+	 * No-op if the WebSocket is not open.
 	 */
 	send(line: string): void {
-		if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-			this.ws.send(line + '\r\n');
+		if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+			return;
 		}
+		this.ws.send(line + '\r\n');
 	}
 
 	/**
@@ -135,7 +155,12 @@ export class IRCConnection {
 	}
 
 	/**
-	 * Buffer incoming data and emit complete lines delimited by \r\n.
+	 * Buffer incoming data and emit complete IRC lines.
+	 *
+	 * Handles both framing styles:
+	 *   - CRLF-delimited streams (multiple lines per WebSocket frame)
+	 *   - Bare frames (one IRC line per WebSocket message, no trailing CRLF —
+	 *     this is how Ergo delivers lines over WebSocket)
 	 */
 	private handleData(data: string): void {
 		this.buffer += data;
@@ -147,6 +172,14 @@ export class IRCConnection {
 			if (line.length > 0) {
 				this.emit('message', line);
 			}
+		}
+
+		// If the buffer has content but no CRLF, this is a bare WebSocket
+		// frame (one complete IRC line without a trailing delimiter).
+		if (this.buffer.length > 0 && !this.buffer.includes('\r\n')) {
+			const line = this.buffer;
+			this.buffer = '';
+			this.emit('message', line);
 		}
 	}
 
@@ -180,7 +213,9 @@ export class IRCConnection {
 		};
 
 		ws.onmessage = (ev: MessageEvent) => {
-			this.handleData(ev.data as string);
+			if (typeof ev.data === 'string') {
+				this.handleData(ev.data);
+			}
 		};
 
 		ws.onerror = (ev: Event) => {

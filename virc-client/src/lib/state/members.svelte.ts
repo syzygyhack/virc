@@ -4,6 +4,9 @@
  *
  * Rich member data: modes, highest mode prefix, away status, and presence.
  * Complements the simpler channels.svelte.ts member tracking.
+ *
+ * Uses a version counter for Map reactivity (Svelte 5 $state doesn't
+ * deeply track Map/Set mutations).
  */
 
 /** Mode prefix precedence from highest to lowest. */
@@ -19,14 +22,18 @@ export interface Member {
 	presence: 'online' | 'idle' | 'dnd' | 'offline';
 }
 
-interface MemberStore {
-	channels: Map<string, Map<string, Member>>; // channel -> nick -> Member
+// --- Internal storage (non-reactive) ---
+const _channels = new Map<string, Map<string, Member>>();
+let _version = $state(0);
+
+function notify(): void {
+	_version++;
 }
 
-/** Reactive member store — components read this directly. */
-export const memberState: MemberStore = $state({
-	channels: new Map(),
-});
+// Legacy export for direct access
+export const memberState = {
+	get channels() { void _version; return _channels; },
+};
 
 /** Compute the highest mode from an array of mode prefixes. */
 function computeHighestMode(modes: string[]): string | null {
@@ -37,10 +44,10 @@ function computeHighestMode(modes: string[]): string | null {
 }
 
 function ensureChannel(channel: string): Map<string, Member> {
-	if (!memberState.channels.has(channel)) {
-		memberState.channels.set(channel, new Map());
+	if (!_channels.has(channel)) {
+		_channels.set(channel, new Map());
 	}
-	return memberState.channels.get(channel)!;
+	return _channels.get(channel)!;
 }
 
 /** Set the full member list for a channel (from NAMES/WHO response). */
@@ -49,28 +56,32 @@ export function setMembers(channel: string, members: Member[]): void {
 	for (const m of members) {
 		map.set(m.nick, m);
 	}
-	memberState.channels.set(channel, map);
+	_channels.set(channel, map);
+	notify();
 }
 
 /** Add a member to a channel (on JOIN). Overwrites if nick already exists. */
 export function addMember(channel: string, member: Member): void {
 	const map = ensureChannel(channel);
 	map.set(member.nick, member);
+	notify();
 }
 
 /** Remove a member from a channel (on PART). */
 export function removeMember(channel: string, nick: string): void {
-	const map = memberState.channels.get(channel);
+	const map = _channels.get(channel);
 	if (map) {
 		map.delete(nick);
+		notify();
 	}
 }
 
 /** Remove a member from all channels (on QUIT). */
 export function removeMemberFromAll(nick: string): void {
-	for (const map of memberState.channels.values()) {
+	for (const map of _channels.values()) {
 		map.delete(nick);
 	}
+	notify();
 }
 
 /**
@@ -96,7 +107,7 @@ export function updatePresence(nick: string, isAway: boolean, reason?: string): 
 		}
 	}
 
-	for (const map of memberState.channels.values()) {
+	for (const map of _channels.values()) {
 		const member = map.get(nick);
 		if (member) {
 			member.isAway = isAway;
@@ -104,21 +115,24 @@ export function updatePresence(nick: string, isAway: boolean, reason?: string): 
 			member.presence = presence;
 		}
 	}
+	notify();
 }
 
 /** Update modes for a member in a specific channel. Recalculates highestMode. */
 export function updateMemberModes(channel: string, nick: string, modes: string[]): void {
-	const map = memberState.channels.get(channel);
+	const map = _channels.get(channel);
 	if (!map) return;
 	const member = map.get(nick);
 	if (!member) return;
 	member.modes = modes;
 	member.highestMode = computeHighestMode(modes);
+	notify();
 }
 
 /** Get a single member by nick in a channel, or null. */
 export function getMember(channel: string, nick: string): Member | null {
-	const map = memberState.channels.get(channel);
+	void _version;
+	const map = _channels.get(channel);
 	if (!map) return null;
 	return map.get(nick) ?? null;
 }
@@ -128,7 +142,8 @@ export function getMember(channel: string, nick: string): Member | null {
  * then alphabetically by nick within each role.
  */
 export function getMembers(channel: string): Member[] {
-	const map = memberState.channels.get(channel);
+	void _version;
+	const map = _channels.get(channel);
 	if (!map) return [];
 
 	const members = Array.from(map.values());
@@ -147,7 +162,8 @@ export function getMembers(channel: string): Member[] {
  * are sorted alphabetically.
  */
 export function getMembersByRole(channel: string): Map<string, Member[]> {
-	const map = memberState.channels.get(channel);
+	void _version;
+	const map = _channels.get(channel);
 	if (!map) return new Map();
 
 	const grouped = new Map<string, Member[]>();
@@ -176,17 +192,18 @@ function modeRank(mode: string | null): number {
 
 /** Set a member's presence to 'offline' across all channels. */
 export function setPresenceOffline(nick: string): void {
-	for (const map of memberState.channels.values()) {
+	for (const map of _channels.values()) {
 		const member = map.get(nick);
 		if (member) {
 			member.presence = 'offline';
 		}
 	}
+	notify();
 }
 
 /** Rename a member across all channels (used for NICK). */
 export function renameMember(oldNick: string, newNick: string): void {
-	for (const map of memberState.channels.values()) {
+	for (const map of _channels.values()) {
 		const member = map.get(oldNick);
 		if (member) {
 			map.delete(oldNick);
@@ -194,9 +211,11 @@ export function renameMember(oldNick: string, newNick: string): void {
 			map.set(newNick, member);
 		}
 	}
+	notify();
 }
 
 /** Reset all member state. */
 export function resetMembers(): void {
-	memberState.channels.clear();
+	_channels.clear();
+	notify();
 }

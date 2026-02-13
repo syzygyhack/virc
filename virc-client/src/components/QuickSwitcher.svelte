@@ -3,7 +3,6 @@
 	import {
 		channelUIState,
 		setActiveChannel,
-		type ChannelCategory,
 	} from '$lib/state/channels.svelte';
 
 	interface Props {
@@ -20,11 +19,11 @@
 		name: string;
 		displayName: string;
 		icon: string;
-		type: 'text' | 'voice' | 'dm';
+		type: 'text' | 'dm';
 	}
 
-	/** Build the full list of switchable targets. */
-	let allItems = $derived((): SwitcherItem[] => {
+	/** Build the full list of switchable targets (text channels + DMs). */
+	let allItems = $derived.by((): SwitcherItem[] => {
 		const items: SwitcherItem[] = [];
 
 		// DM conversations
@@ -37,24 +36,16 @@
 			});
 		}
 
-		// Channels from categories
+		// Text channels from categories (skip voice)
 		for (const cat of channelUIState.categories) {
+			if (cat.voice) continue;
 			for (const ch of cat.channels) {
-				if (cat.voice) {
-					items.push({
-						name: ch,
-						displayName: ch.replace(/^#/, ''),
-						icon: '\uD83D\uDD0A',
-						type: 'voice',
-					});
-				} else {
-					items.push({
-						name: ch,
-						displayName: ch.replace(/^#/, ''),
-						icon: '#',
-						type: 'text',
-					});
-				}
+				items.push({
+					name: ch,
+					displayName: ch.replace(/^#/, ''),
+					icon: '#',
+					type: 'text',
+				});
 			}
 		}
 
@@ -62,8 +53,8 @@
 	});
 
 	/** Filtered results based on query. */
-	let results = $derived((): SwitcherItem[] => {
-		const items = allItems();
+	let results = $derived.by((): SwitcherItem[] => {
+		const items = allItems;
 		if (!query.trim()) return items;
 		const q = query.toLowerCase().trim();
 		return items.filter(
@@ -75,7 +66,7 @@
 
 	/** Clamp selected index when results change. */
 	$effect(() => {
-		const r = results();
+		const r = results;
 		if (selectedIndex >= r.length) {
 			selectedIndex = Math.max(0, r.length - 1);
 		}
@@ -87,7 +78,7 @@
 	});
 
 	function handleKeydown(e: KeyboardEvent): void {
-		const r = results();
+		const r = results;
 
 		if (e.key === 'ArrowDown') {
 			e.preventDefault();
@@ -108,10 +99,7 @@
 	}
 
 	function selectItem(item: SwitcherItem): void {
-		// Only switch to text channels and DMs (voice channels need special handling)
-		if (item.type !== 'voice') {
-			setActiveChannel(item.name);
-		}
+		setActiveChannel(item.name);
 		onclose();
 	}
 
@@ -133,12 +121,12 @@
 			role="combobox"
 			aria-expanded="true"
 			aria-controls="switcher-listbox"
-			aria-activedescendant={results().length > 0 ? `switcher-item-${selectedIndex}` : undefined}
+			aria-activedescendant={results.length > 0 ? `switcher-item-${selectedIndex}` : undefined}
 			onkeydown={handleKeydown}
 		/>
 
 		<div class="switcher-results" id="switcher-listbox" role="listbox">
-			{#each results() as item, i (item.name)}
+			{#each results as item, i (item.name)}
 				<div
 					id="switcher-item-{i}"
 					class="switcher-item"
@@ -150,7 +138,7 @@
 					onkeydown={(e) => { if (e.key === 'Enter') selectItem(item); }}
 					onmouseenter={() => (selectedIndex = i)}
 				>
-					<span class="switcher-icon" class:dm-icon={item.type === 'dm'} class:voice-icon={item.type === 'voice'}>
+					<span class="switcher-icon" class:dm-icon={item.type === 'dm'}>
 						{item.icon}
 					</span>
 					<span class="switcher-name">{item.displayName}</span>
@@ -235,10 +223,6 @@
 	.switcher-icon.dm-icon {
 		font-size: var(--font-sm);
 		font-weight: var(--weight-bold);
-	}
-
-	.switcher-icon.voice-icon {
-		font-size: var(--font-sm);
 	}
 
 	.switcher-name {

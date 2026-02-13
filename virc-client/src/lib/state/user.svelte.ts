@@ -1,9 +1,9 @@
 /**
  * Reactive user/auth state for the current session.
  *
- * Credentials are persisted in sessionStorage so they survive page reloads
- * but are cleared when the tab closes. This supports SASL reconnect and
- * JWT refresh without re-prompting the user.
+ * Credentials are persisted in localStorage so they survive app restarts
+ * (required for Tauri where sessionStorage is cleared on window close).
+ * This supports SASL reconnect and JWT refresh without re-prompting the user.
  */
 
 import {
@@ -35,7 +35,7 @@ export function isAuthenticated(): boolean {
 }
 
 /**
- * Log the user in: store credentials in sessionStorage and update
+ * Log the user in: store credentials in localStorage and update
  * reactive state. Does NOT perform SASL or JWT — callers handle that.
  */
 export function login(account: string, password: string): void {
@@ -45,10 +45,14 @@ export function login(account: string, password: string): void {
 }
 
 /**
- * Clear session: remove stored credentials and reset reactive state.
+ * Clear session: remove stored credentials, server URLs, and reset reactive state.
  */
 export function logout(): void {
 	clearCredentials();
+	if (typeof localStorage !== 'undefined') {
+		localStorage.removeItem('virc:serverUrl');
+		localStorage.removeItem('virc:filesUrl');
+	}
 	userState.account = null;
 	userState.nick = null;
 }
@@ -69,8 +73,8 @@ export function getStoredCredentials(): StoredCredentials | null {
 }
 
 /**
- * Restore reactive state from sessionStorage on app start.
- * Call once during initialization to rehydrate after page reload.
+ * Restore reactive state from localStorage on app start.
+ * Call once during initialization to rehydrate after page reload or app restart.
  */
 export function rehydrate(): void {
 	const creds = getCredentials();

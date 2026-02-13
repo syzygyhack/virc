@@ -9,7 +9,7 @@ export interface ServerInfo {
 	id: string;
 	name: string;
 	url: string;
-	filesUrl: string;
+	filesUrl: string | null;
 	icon: string | null;
 }
 

@@ -25,9 +25,14 @@ auth.post("/api/auth", async (c) => {
   const ergoUrl = `${env.ERGO_API}/v1/check_auth`;
   let ergoRes: Response;
   try {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    const apiToken = env.ERGO_API_TOKEN;
+    if (apiToken) {
+      headers["Authorization"] = `Bearer ${apiToken}`;
+    }
     ergoRes = await fetch(ergoUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify({
         accountName: account,
         passphrase: password,

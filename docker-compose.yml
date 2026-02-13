@@ -2,7 +2,7 @@ services:
   ergo:
     image: ghcr.io/ergochat/ergo:stable
     ports:
-      - "6697:6697"
+      - "6667:6667"
       - "8097:8097"
     volumes:
       - ./config/ergo/ircd.yaml:/ircd/ircd.yaml
@@ -35,7 +35,9 @@ services:
       - "8080:8080"
     environment:
       ERGO_API: http://ergo:8089
+      ERGO_API_TOKEN: ${ERGO_API_TOKEN:-sTcmero5do9UZFqJ8HYSpgnXUckvTLtnbY1uRYeU1Ak}
       LIVEKIT_URL: ws://livekit:7880
+      LIVEKIT_CLIENT_URL: ${LIVEKIT_CLIENT_URL:-ws://localhost:7880}
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-devkey}
       LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-devsecret}
       JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret}

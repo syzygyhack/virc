@@ -1,33 +1,46 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { authenticateSASL } from './sasl';
 import type { IRCConnection } from './connection';
 
 function createMockConn() {
 	const sent: string[] = [];
-	const handlers: ((line: string) => void)[] = [];
+	const listeners = new Map<string, ((...args: any[]) => void)[]>();
 
 	const conn = {
 		send(line: string) {
 			sent.push(line);
 		},
 		on(event: string, handler: (...args: any[]) => void) {
-			if (event === 'message') {
-				handlers.push(handler as (line: string) => void);
-			}
+			if (!listeners.has(event)) listeners.set(event, []);
+			listeners.get(event)!.push(handler);
 		},
 		off(event: string, handler: (...args: any[]) => void) {
-			if (event === 'message') {
-				const idx = handlers.indexOf(handler as (line: string) => void);
-				if (idx !== -1) handlers.splice(idx, 1);
-			}
+			const list = listeners.get(event);
+			if (!list) return false;
+			const idx = list.indexOf(handler);
+			if (idx !== -1) list.splice(idx, 1);
 			return true;
 		},
 		simulateMessage(line: string) {
-			for (const h of [...handlers]) {
+			for (const h of [...(listeners.get('message') ?? [])]) {
 				h(line);
 			}
-		}
-	} as unknown as IRCConnection & { simulateMessage: (line: string) => void };
+		},
+		simulateClose() {
+			for (const h of [...(listeners.get('close') ?? [])]) {
+				h();
+			}
+		},
+		simulateError() {
+			for (const h of [...(listeners.get('error') ?? [])]) {
+				h();
+			}
+		},
+	} as unknown as IRCConnection & {
+		simulateMessage: (line: string) => void;
+		simulateClose: () => void;
+		simulateError: () => void;
+	};
 
 	return { conn, sent };
 }
@@ -118,5 +131,34 @@ describe('authenticateSASL', () => {
 		conn.simulateMessage(':server 903 * :SASL authentication successful');
 
 		await expect(promise).resolves.toBeUndefined();
+	});
+
+	it('rejects when connection closes during auth', async () => {
+		const { conn } = createMockConn();
+		const promise = authenticateSASL(conn, 'user', 'pass');
+
+		conn.simulateClose();
+
+		await expect(promise).rejects.toThrow('Connection closed during SASL authentication');
+	});
+
+	it('rejects when connection errors during auth', async () => {
+		const { conn } = createMockConn();
+		const promise = authenticateSASL(conn, 'user', 'pass');
+
+		conn.simulateError();
+
+		await expect(promise).rejects.toThrow('Connection error during SASL authentication');
+	});
+
+	it('rejects on timeout when server never responds', async () => {
+		vi.useFakeTimers();
+		const { conn } = createMockConn();
+		const promise = authenticateSASL(conn, 'user', 'pass');
+
+		vi.advanceTimersByTime(10_001);
+
+		await expect(promise).rejects.toThrow('SASL authentication timed out');
+		vi.useRealTimers();
 	});
 });

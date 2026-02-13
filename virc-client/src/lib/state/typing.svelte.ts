@@ -3,36 +3,44 @@
  *
  * Tracks which users are currently typing in each channel/DM target.
  * Typing state expires after TYPING_TIMEOUT_MS without a fresh signal.
+ *
+ * Uses a version counter for Map reactivity (Svelte 5 $state doesn't
+ * deeply track Map/Set mutations).
  */
 
 const TYPING_TIMEOUT_MS = 6_000;
 
-interface TypingStore {
-	/** channel -> nick -> last-seen timestamp (ms) */
-	channels: Map<string, Map<string, number>>;
+// --- Internal storage (non-reactive) ---
+const _channels = new Map<string, Map<string, number>>();
+let _version = $state(0);
+
+function notify(): void {
+	_version++;
 }
 
-/** Reactive typing store — components read this directly. */
-export const typingState: TypingStore = $state({
-	channels: new Map(),
-});
+// Legacy export for direct access
+export const typingState = {
+	get channels() { void _version; return _channels; },
+};
 
 /** Mark a user as typing in a channel. Resets their expiry timer. */
 export function setTyping(channel: string, nick: string): void {
-	if (!typingState.channels.has(channel)) {
-		typingState.channels.set(channel, new Map());
+	if (!_channels.has(channel)) {
+		_channels.set(channel, new Map());
 	}
-	typingState.channels.get(channel)!.set(nick, Date.now());
+	_channels.get(channel)!.set(nick, Date.now());
+	notify();
 }
 
 /** Explicitly clear a user's typing state (e.g. on +typing=done or message sent). */
 export function clearTyping(channel: string, nick: string): void {
-	const channelMap = typingState.channels.get(channel);
+	const channelMap = _channels.get(channel);
 	if (channelMap) {
 		channelMap.delete(nick);
 		if (channelMap.size === 0) {
-			typingState.channels.delete(channel);
+			_channels.delete(channel);
 		}
+		notify();
 	}
 }
 
@@ -41,22 +49,30 @@ export function clearTyping(channel: string, nick: string): void {
  * Filters out entries older than TYPING_TIMEOUT_MS and cleans them up.
  */
 export function getTypingUsers(channel: string): string[] {
-	const channelMap = typingState.channels.get(channel);
+	void _version;
+	const channelMap = _channels.get(channel);
 	if (!channelMap) return [];
 
 	const now = Date.now();
 	const active: string[] = [];
+	let changed = false;
 
 	for (const [nick, timestamp] of channelMap) {
 		if (now - timestamp < TYPING_TIMEOUT_MS) {
 			active.push(nick);
 		} else {
 			channelMap.delete(nick);
+			changed = true;
 		}
 	}
 
 	if (channelMap.size === 0) {
-		typingState.channels.delete(channel);
+		_channels.delete(channel);
+		changed = true;
+	}
+
+	if (changed) {
+		notify();
 	}
 
 	return active;
@@ -64,5 +80,6 @@ export function getTypingUsers(channel: string): string[] {
 
 /** Reset all typing state. */
 export function resetTyping(): void {
-	typingState.channels.clear();
+	_channels.clear();
+	notify();
 }

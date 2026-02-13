@@ -193,4 +193,28 @@ describe("POST /api/auth", () => {
     expect(sentBody.accountName).toBe("alice");
     expect(sentBody.passphrase).toBe("pass123");
   });
+
+  test("sends bearer token to Ergo API when ERGO_API_TOKEN is set", async () => {
+    const prev = process.env.ERGO_API_TOKEN;
+    process.env.ERGO_API_TOKEN = "test-bearer-token";
+    const fetchMock = mock(async () =>
+      new Response(JSON.stringify({ success: true }), { status: 200 }),
+    );
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    try {
+      await auth.fetch(req("/api/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ account: "alice", password: "pass123" }),
+      }));
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const [, options] = fetchMock.mock.calls[0];
+      expect(options.headers["Authorization"]).toBe("Bearer test-bearer-token");
+    } finally {
+      if (prev === undefined) delete process.env.ERGO_API_TOKEN;
+      else process.env.ERGO_API_TOKEN = prev;
+    }
+  });
 });

@@ -47,12 +47,32 @@ function parseCapList(raw: string): string[] {
  *
  * Does NOT send `CAP END` — SASL authentication must happen first.
  */
+const CAP_TIMEOUT_MS = 10_000;
+
 export function negotiateCaps(conn: IRCConnection): Promise<string[]> {
 	return new Promise<string[]>((resolve, reject) => {
 		const advertised: string[] = [];
 		let phase: 'ls' | 'req' = 'ls';
+		let settled = false;
+
+		const timeout = setTimeout(() => {
+			if (!settled) {
+				settled = true;
+				cleanup();
+				reject(new Error('CAP negotiation timed out'));
+			}
+		}, CAP_TIMEOUT_MS);
+
+		function settle(fn: () => void): void {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timeout);
+			cleanup();
+			fn();
+		}
 
 		function handler(line: string) {
+			if (settled) return;
 			const msg = parseMessage(line);
 
 			if (msg.command !== 'CAP') return;
@@ -74,8 +94,7 @@ export function negotiateCaps(conn: IRCConnection): Promise<string[]> {
 					const toRequest = MVP_CAPS.filter((c) => advertised.includes(c));
 
 					if (toRequest.length === 0) {
-						conn.off('message', handler);
-						resolve([]);
+						settle(() => resolve([]));
 						return;
 					}
 
@@ -83,25 +102,35 @@ export function negotiateCaps(conn: IRCConnection): Promise<string[]> {
 					conn.send(`CAP REQ :${toRequest.join(' ')}`);
 				}
 			} else if (phase === 'req' && (subcommand === 'ACK' || subcommand === 'NAK')) {
-				// Remove our handler by setting phase to done
 				const ackString = msg.params[2] ?? '';
 				const acked = parseCapList(ackString);
-				cleanup();
 
 				if (subcommand === 'NAK') {
-					reject(new Error(`CAP REQ rejected: ${ackString}`));
+					settle(() => reject(new Error(`CAP REQ rejected: ${ackString}`)));
 					return;
 				}
 
-				resolve(acked);
+				settle(() => resolve(acked));
 			}
+		}
+
+		function onClose() {
+			settle(() => reject(new Error('Connection closed during CAP negotiation')));
+		}
+
+		function onError() {
+			settle(() => reject(new Error('Connection error during CAP negotiation')));
 		}
 
 		function cleanup() {
 			conn.off('message', handler);
+			conn.off('close', onClose);
+			conn.off('error', onError);
 		}
 
 		conn.on('message', handler);
+		conn.on('close', onClose);
+		conn.on('error', onError);
 		conn.send('CAP LS 302');
 	});
 }

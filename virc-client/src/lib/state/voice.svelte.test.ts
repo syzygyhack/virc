@@ -91,14 +91,26 @@ describe('voiceState', () => {
 		expect(voiceState.localMuted).toBe(true);
 	});
 
-	it('toggleDeafen() un-deafens without changing mute state', () => {
-		toggleDeafen(); // deafen + mute
+	it('toggleDeafen() un-deafens and restores mute to pre-deafen state', () => {
+		toggleDeafen(); // deafen + mute (was not muted before)
 		expect(voiceState.localDeafened).toBe(true);
 		expect(voiceState.localMuted).toBe(true);
 
-		toggleDeafen(); // un-deafen
+		toggleDeafen(); // un-deafen — restores localMuted to false
 		expect(voiceState.localDeafened).toBe(false);
-		// localMuted stays true because toggleDeafen only sets it on deafen
+		expect(voiceState.localMuted).toBe(false);
+	});
+
+	it('toggleDeafen() un-deafens and keeps mute if was muted before', () => {
+		toggleMute(); // independently mute
+		expect(voiceState.localMuted).toBe(true);
+
+		toggleDeafen(); // deafen (was already muted)
+		expect(voiceState.localDeafened).toBe(true);
+		expect(voiceState.localMuted).toBe(true);
+
+		toggleDeafen(); // un-deafen — restores localMuted to true (was muted before)
+		expect(voiceState.localDeafened).toBe(false);
 		expect(voiceState.localMuted).toBe(true);
 	});
 

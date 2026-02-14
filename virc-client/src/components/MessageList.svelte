@@ -441,6 +441,9 @@
 		flex-direction: column;
 		padding: 16px 0 8px;
 		position: relative;
+		/* Limit layout recalculation scope — the message list doesn't affect
+		   sibling layout, so the browser can skip reflowing the rest of the page. */
+		contain: strict;
 	}
 
 	/* Skeleton loading for history fetch */

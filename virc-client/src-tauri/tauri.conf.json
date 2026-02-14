@@ -7,7 +7,8 @@
     "frontendDist": "../build",
     "devUrl": "http://localhost:5173",
     "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build"
+    "beforeBuildCommand": "npm run build",
+    "removeUnusedCommands": true
   },
   "app": {
     "windows": [
@@ -25,7 +26,24 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": {
+        "default-src": "'self'",
+        "script-src": "'self' 'unsafe-inline'",
+        "style-src": "'self' 'unsafe-inline'",
+        "img-src": "'self' blob: data:",
+        "font-src": "'self' data:",
+        "connect-src": "ipc: http://ipc.localhost ws: wss: http: https:",
+        "media-src": "'self' blob:",
+        "frame-src": "isolation: 'self'",
+        "object-src": "'none'",
+        "base-uri": "'self'"
+      },
+      "pattern": {
+        "use": "isolation",
+        "options": {
+          "dir": "../dist-isolation"
+        }
+      }
     }
   },
   "bundle": {

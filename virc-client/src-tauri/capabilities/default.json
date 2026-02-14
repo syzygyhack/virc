@@ -1,12 +1,14 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
-  "identifier": "default",
-  "description": "enables the default permissions",
+  "identifier": "main-window",
+  "description": "Main chat window capabilities — least-privilege set for the primary UI",
   "windows": [
     "main"
   ],
   "permissions": [
     "core:default",
-    "opener:default"
+    "opener:default",
+    "core:event:default",
+    "core:window:default"
   ]
 }

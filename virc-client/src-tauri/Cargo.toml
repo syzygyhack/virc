@@ -10,12 +10,12 @@ name = "virc_lib"
 crate-type = ["rlib"]
 
 [build-dependencies]
-tauri-build = { version = "2", features = [] }
+tauri-build = { version = "2", features = ["isolation"] }
 
 [dependencies]
 serde_json = "1"
 serde = { version = "1", features = ["derive"] }
-tauri = { version = "2", features = [] }
+tauri = { version = "2", default-features = false, features = ["isolation", "wry"] }
 tauri-plugin-opener = "2.5.3"
 
 [profile.release]
@@ -23,3 +23,13 @@ strip = true
 lto = true
 codegen-units = 1
 opt-level = "s"
+panic = "abort"
+incremental = false
+
+[profile.dev]
+incremental = true
+opt-level = 0
+
+# Speed up dev builds for the windows crate (slow to compile at opt-level 0)
+[profile.dev.package.windows]
+opt-level = 1

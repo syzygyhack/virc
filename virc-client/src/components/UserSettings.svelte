@@ -5,6 +5,7 @@
 	import { clearToken } from '$lib/api/auth';
 	import { formatMessage } from '$lib/irc/parser';
 	import { audioSettings } from '$lib/state/audioSettings.svelte';
+	import { appSettings, type ZoomLevel } from '$lib/state/appSettings.svelte';
 	import type { IRCConnection } from '$lib/irc/connection';
 
 	interface Props {
@@ -14,7 +15,7 @@
 
 	let { onclose, connection = null }: Props = $props();
 
-	let activeTab: 'account' | 'voice' | 'about' = $state('account');
+	let activeTab: 'account' | 'voice' | 'appearance' | 'about' = $state('account');
 
 	// Display name editing
 	let editingNick = $state(false);
@@ -33,8 +34,15 @@
 	let tabTitle = $derived(
 		activeTab === 'account' ? 'My Account' :
 		activeTab === 'voice' ? 'Voice & Audio' :
+		activeTab === 'appearance' ? 'Appearance' :
 		'About'
 	);
+
+	const zoomOptions: { value: ZoomLevel; label: string; desc: string }[] = [
+		{ value: 100, label: 'Spacious', desc: 'Most room for content' },
+		{ value: 125, label: 'Default', desc: 'Balanced zoom level' },
+		{ value: 150, label: 'Compact', desc: 'Zoomed in, tighter layout' },
+	];
 
 	function handleKeydown(e: KeyboardEvent): void {
 		// PTT keybind capture mode
@@ -326,8 +334,17 @@
 			</div>
 			<div class="nav-section">
 				<span class="nav-section-title">App Settings</span>
+				<button class="nav-item" class:active={activeTab === 'appearance'} onclick={() => activeTab = 'appearance'}>
+					Appearance
+				</button>
 				<button class="nav-item" class:active={activeTab === 'voice'} onclick={() => activeTab = 'voice'}>
 					Voice & Audio
+				</button>
+				<button class="nav-item disabled" disabled>
+					Notifications
+				</button>
+				<button class="nav-item disabled" disabled>
+					Keybinds
 				</button>
 			</div>
 			<div class="nav-divider"></div>
@@ -501,6 +518,26 @@
 					{#if audioInputDevices.length === 0 && audioOutputDevices.length === 0}
 						<p class="device-hint">No audio devices detected. Join a voice channel first to grant microphone permission, then reopen settings.</p>
 					{/if}
+				{:else if activeTab === 'appearance'}
+					<div class="settings-section">
+						<h3 class="section-title">Zoom Level</h3>
+						<p class="setting-hint">Controls the overall UI scale. Higher values zoom in for a more compact feel.</p>
+						<div class="zoom-options">
+							{#each zoomOptions as opt (opt.value)}
+								<button
+									class="zoom-option"
+									class:active={appSettings.zoom === opt.value}
+									onclick={() => appSettings.zoom = opt.value}
+								>
+									<div class="zoom-option-header">
+										<span class="zoom-option-label">{opt.label}</span>
+										<span class="zoom-option-pct">{opt.value}%</span>
+									</div>
+									<span class="zoom-option-desc">{opt.desc}</span>
+								</button>
+							{/each}
+						</div>
+					</div>
 				{:else if activeTab === 'about'}
 					<div class="about-section">
 						<div class="about-logo">virc</div>
@@ -601,7 +638,7 @@
 	}
 
 	.nav-item.danger:hover {
-		background: rgba(224, 64, 64, 0.12);
+		background: var(--danger-bg);
 		color: var(--danger);
 	}
 
@@ -641,9 +678,8 @@
 
 	.close-btn {
 		display: flex;
-		flex-direction: column;
 		align-items: center;
-		gap: 4px;
+		justify-content: center;
 		background: none;
 		border: 2px solid var(--surface-highest);
 		border-radius: 50%;
@@ -651,9 +687,6 @@
 		height: 36px;
 		cursor: pointer;
 		color: var(--text-muted);
-		display: flex;
-		align-items: center;
-		justify-content: center;
 		transition: color var(--duration-channel), border-color var(--duration-channel);
 		position: relative;
 	}
@@ -666,7 +699,7 @@
 	.close-hint {
 		position: absolute;
 		top: 40px;
-		font-size: 10px;
+		font-size: var(--font-xs);
 		color: var(--text-muted);
 		font-weight: var(--weight-semibold);
 		letter-spacing: 0.04em;
@@ -836,7 +869,7 @@
 	}
 
 	.logout-btn:hover {
-		background: #c43030;
+		filter: brightness(0.85);
 	}
 
 	/* ---- Voice & Audio Tab ---- */
@@ -976,7 +1009,7 @@
 	}
 
 	.mic-test-btn.active:hover {
-		background: #c43030;
+		filter: brightness(0.85);
 	}
 
 	.mic-test-error {
@@ -1001,15 +1034,15 @@
 	}
 
 	.gain-segment.active.green {
-		background: #3ba55d;
+		background: var(--success);
 	}
 
 	.gain-segment.active.yellow {
-		background: #faa61a;
+		background: var(--warning);
 	}
 
 	.gain-segment.active.red {
-		background: #ed4245;
+		background: var(--danger);
 	}
 
 	/* ---- Input Mode (PTT) ---- */
@@ -1085,6 +1118,73 @@
 		50% { border-color: transparent; }
 	}
 
+	/* ---- Disabled nav items (scaffolded) ---- */
+
+	.nav-item.disabled {
+		color: var(--text-muted);
+		cursor: default;
+		opacity: 0.5;
+	}
+
+	.nav-item.disabled:hover {
+		background: none;
+		color: var(--text-muted);
+	}
+
+	/* ---- Appearance Tab ---- */
+
+	.zoom-options {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+
+	.zoom-option {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		padding: 12px 16px;
+		background: var(--surface-low);
+		border: 1px solid var(--surface-highest);
+		border-radius: 6px;
+		cursor: pointer;
+		text-align: left;
+		font-family: var(--font-primary);
+		transition: background var(--duration-channel), border-color var(--duration-channel);
+	}
+
+	.zoom-option:hover {
+		background: var(--surface-high);
+	}
+
+	.zoom-option.active {
+		border-color: var(--accent-primary);
+		background: var(--accent-bg);
+	}
+
+	.zoom-option-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+	}
+
+	.zoom-option-label {
+		font-size: var(--font-base);
+		font-weight: var(--weight-medium);
+		color: var(--text-primary);
+	}
+
+	.zoom-option-pct {
+		font-size: var(--font-xs);
+		color: var(--text-muted);
+		font-family: var(--font-mono);
+	}
+
+	.zoom-option-desc {
+		font-size: var(--font-xs);
+		color: var(--text-muted);
+	}
+
 	/* ---- About Tab ---- */
 
 	.about-section {
@@ -1096,7 +1196,7 @@
 	}
 
 	.about-logo {
-		font-size: 48px;
+		font-size: calc(var(--font-xl) * 2);
 		font-weight: var(--weight-bold);
 		color: var(--accent-primary);
 		letter-spacing: -0.02em;

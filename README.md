@@ -58,7 +58,7 @@ The client connects to Ergo over a single WebSocket for all chat functionality. 
 - Typing indicators (throttled, auto-expiring)
 - Read markers synced via MARKREAD
 - Unread badges and mention counts
-- Slash command popup with 16 IRC commands, descriptions, and keyboard navigation
+- Slash command popup with 10 IRC commands, descriptions, and keyboard navigation
 - Commands gated by channel privilege level (mod commands require halfop+)
 - `//` escape to send literal `/`-prefixed messages
 
@@ -78,9 +78,13 @@ The client connects to Ergo over a single WebSocket for all chat functionality. 
 ### Voice
 - Join/leave voice channels via LiveKit
 - Mute and deafen toggles
+- Push-to-talk with configurable keybind (window blur safety auto-releases)
 - Speaking indicator (green ring)
 - Participant list in sidebar with mute/deafen status icons
-- Mic tester with loopback audio and level meter in settings
+- Noise suppression toggle (browser-native)
+- Input/output device selection with live switching while connected
+- Mic tester with loopback audio, mono-to-stereo upmix, and level meter
+- Output volume control applied to all remote tracks
 
 ### Account
 - Display name editing in settings UI
@@ -90,16 +94,17 @@ The client connects to Ergo over a single WebSocket for all chat functionality. 
 ### Desktop (Tauri 2)
 - Native window with 1280x800 default, 600x400 minimum
 - Bundled for Windows (.msi/.exe), macOS (.dmg), and Linux (.deb/.AppImage)
+- Splash screen with fade-out transition on startup
 - No browser required — runs as a standalone app
 
 ### UI
 - Three-column responsive layout (server list + sidebar + messages + members)
 - Dark theme with CSS custom properties
-- Keyboard shortcuts (Ctrl+K, Alt+Up/Down, Escape, Shift+Escape)
+- Keyboard shortcuts (Ctrl+K, Alt+Up/Down, Escape, Shift+Escape, Ctrl+Shift+M/D)
 - Tab completion (@user, #channel, :emoji:)
 - Hover toolbar (React, Reply, More)
 - Connection status banner with auto-reconnect
-- Voice controls on separate row from username
+- Rate limit countdown display
 
 ---
 
@@ -162,6 +167,19 @@ docker compose up -d
 ```
 
 Docker Compose runs all five services. Caddy serves the built client from `/srv/virc` and proxies `/ws` to Ergo, `/api/*` to virc-files.
+
+### LAN Access
+
+To make the server accessible to other machines on your network:
+
+1. Set `LIVEKIT_CLIENT_URL` in `.env` to your LAN IP:
+   ```
+   LIVEKIT_CLIENT_URL=ws://192.168.1.100:7880
+   ```
+2. `use_external_ip` is already enabled in `config/livekit/config.yaml`.
+3. Restart: `docker compose up -d`
+
+All Docker services bind to `0.0.0.0` by default, so ports are already network-accessible.
 
 ### Desktop Build (Tauri)
 
@@ -257,9 +275,8 @@ virc/
 ├── docker-compose.yml           # 5-service stack
 ├── dev.sh                       # Dev launcher (Linux/macOS)
 ├── dev.ps1                      # Dev launcher (Windows)
-├── PLAN.md                      # Architecture spec (869 lines)
-├── FRONTEND.md                  # UI/UX design spec (988 lines)
-└── MVP.md                       # MVP scope & build order (417 lines)
+├── PLAN.md                      # Architecture spec
+└── FRONTEND.md                  # UI/UX design spec
 ```
 
 ---
@@ -305,10 +322,11 @@ No client forking required for customization.
 | `ERGO_API` | No | `http://ergo:8089` | Ergo HTTP API URL |
 | `ERGO_API_TOKEN` | No | _(generated)_ | Bearer token for Ergo HTTP API |
 | `LIVEKIT_URL` | No | `ws://livekit:7880` | Internal LiveKit signaling URL |
-| `LIVEKIT_CLIENT_URL` | No | `ws://localhost:7880` | Client-facing LiveKit WebSocket URL |
+| `LIVEKIT_CLIENT_URL` | No | `ws://localhost:7880` | Client-facing LiveKit URL (set to LAN IP for network access) |
 | `ALLOWED_ORIGIN` | No | _(disabled)_ | Origin header check for CSRF |
 | `PORT` | No | `8080` | Backend listen port |
 | `CONFIG_PATH` | No | `config/virc.json` | Server config file path |
+| `SERVER_NAME` | No | — | Server display name |
 
 ---
 
@@ -380,8 +398,6 @@ No client forking required for customization.
 
 ## Known Deferrals
 
-These items are specified in the design docs but intentionally deferred from the MVP.
-
 | Item | Current State | Notes |
 |------|--------------|-------|
 | File uploads / media embeds | Not implemented | Planned via virc-files |
@@ -393,7 +409,6 @@ These items are specified in the design docs but intentionally deferred from the
 | Screen sharing / video | Audio only | LiveKit supports it |
 | Multi-server | Single server | UI accommodates server list |
 | Theme customization UI | Dark only | CSS vars support theming |
-| Voice error feedback | Console only | No user-facing error UI |
 
 ---
 
@@ -401,9 +416,8 @@ These items are specified in the design docs but intentionally deferred from the
 
 | Document | Description |
 |----------|-------------|
-| [`PLAN.md`](PLAN.md) | Architecture spec — tech decisions, protocol design, scalability (869 lines) |
-| [`FRONTEND.md`](FRONTEND.md) | UI/UX design spec — layout, components, themes, accessibility (988 lines) |
-| [`MVP.md`](MVP.md) | MVP scope — build order, smoke tests, capability reference (417 lines) |
+| [`PLAN.md`](PLAN.md) | Architecture spec — tech decisions, protocol design, scalability |
+| [`FRONTEND.md`](FRONTEND.md) | UI/UX design spec — layout, components, themes, accessibility |
 
 ---
 
@@ -415,21 +429,21 @@ Post-initial build, development continued as **human-agent collaboration** — t
 
 The process:
 
-1. **Specification** — PLAN.md, FRONTEND.md, and MVP.md were written via human-agent collaboration, defining architecture, UI/UX, and build order.
+1. **Specification** — PLAN.md and FRONTEND.md were written via human-agent collaboration, defining architecture, UI/UX, and build order.
 2. **Task decomposition** — Cardinal broke the specs into 36 tasks across two packages, ordered by dependency graph: Docker infrastructure first, then IRC protocol layer, then UI shell, then features.
 3. **Implementation** — Opus 4.6, operating in Avril sessions, implemented each task: source code, tests, configuration, and deployment manifests.
-4. **Iteration** — Human-agent collaboration added persistence, display name editing, slash commands with auth gating, voice UI improvements, mic testing, and Tauri desktop packaging.
-5. **Review** — Cross-model review (Claude + OpenAI Codex) identified issues across all findings. All critical and major findings were resolved.
+4. **Iteration** — Human-agent collaboration added persistence, display name editing, slash commands with auth gating, voice UI improvements, push-to-talk, noise suppression, audio device management, mic testing, splash screen, and Tauri desktop packaging.
+5. **Review** — Cross-model review (Claude + OpenAI Codex) identified issues across multiple rounds. All critical and major findings were resolved.
 
 ### By the Numbers
 
 | Metric | Value |
 |--------|-------|
-| TypeScript + Svelte source | ~11,050 lines |
-| Test code | ~3,560 lines |
-| Design specs | ~2,275 lines |
+| TypeScript + Svelte source | ~11,500 lines |
+| Test code | ~4,060 lines |
+| Design specs | ~1,860 lines |
 | Infrastructure config | ~1,290 lines |
-| Commits | 40 |
+| Commits | 41 |
 | Packages | 2 |
 | Tests | 358 |
 

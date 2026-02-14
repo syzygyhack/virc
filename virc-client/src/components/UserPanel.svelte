@@ -222,7 +222,7 @@
 	}
 
 	.action-btn.active:hover {
-		background: rgba(224, 64, 64, 0.15);
+		background: var(--danger-bg);
 	}
 
 	.action-btn.disconnect-btn {
@@ -231,6 +231,6 @@
 	}
 
 	.action-btn.disconnect-btn:hover {
-		background: rgba(224, 64, 64, 0.15);
+		background: var(--danger-bg);
 	}
 </style>

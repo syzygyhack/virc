@@ -1,6 +1,23 @@
 <script lang="ts">
   import '../app.css';
   import { onMount } from 'svelte';
+  import { appSettings } from '$lib/state/appSettings.svelte';
+
+  // Apply zoom by scaling the CSS font-size tokens on :root.
+  // This avoids CSS zoom which breaks viewport units and causes scrollbars.
+  // Everything in the app is sized via --font-* vars, so scaling them
+  // effectively zooms the entire UI while keeping layout intact.
+  const baseSizes = { xs: 11, sm: 12, base: 14, md: 16, lg: 20, xl: 24 };
+  $effect(() => {
+    const scale = appSettings.zoom / 100;
+    const root = document.documentElement.style;
+    root.setProperty('--font-xs', `${Math.round(baseSizes.xs * scale)}px`);
+    root.setProperty('--font-sm', `${Math.round(baseSizes.sm * scale)}px`);
+    root.setProperty('--font-base', `${Math.round(baseSizes.base * scale)}px`);
+    root.setProperty('--font-md', `${Math.round(baseSizes.md * scale)}px`);
+    root.setProperty('--font-lg', `${Math.round(baseSizes.lg * scale)}px`);
+    root.setProperty('--font-xl', `${Math.round(baseSizes.xl * scale)}px`);
+  });
 
   onMount(() => {
     // Dismiss the inline splash screen (defined in app.html).

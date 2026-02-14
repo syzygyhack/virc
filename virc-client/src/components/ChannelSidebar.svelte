@@ -359,7 +359,7 @@
 	}
 
 	.channel-item.voice-connected {
-		background: rgba(59, 165, 93, 0.12);
+		background: var(--success-bg);
 		color: var(--success, #3ba55d);
 		font-weight: var(--weight-medium);
 	}

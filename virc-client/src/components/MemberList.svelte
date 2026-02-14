@@ -5,7 +5,7 @@
 
 	/**
 	* Default role definitions matching virc-files/src/routes/config.ts.
-	* TODO: read from a virc.json config store when one exists.
+	* When a virc.json config is loaded, roles could be overridden from there.
 	*/
 	const ROLE_MAP: Record<string, { name: string; color: string | null }> = {
 		'~': { name: 'Owner', color: '#e0a040' },
@@ -333,7 +333,7 @@
 	/* Presence dots */
 	.presence-dot {
 		flex-shrink: 0;
-		font-size: 10px;
+		font-size: var(--font-xs);
 		line-height: 1;
 		width: 12px;
 		text-align: center;

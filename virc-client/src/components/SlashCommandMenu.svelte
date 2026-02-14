@@ -161,7 +161,7 @@
 		font-weight: var(--weight-bold);
 		letter-spacing: 0.05em;
 		color: var(--warning, #f0b232);
-		background: rgba(240, 178, 50, 0.12);
+		background: var(--warning-bg);
 		padding: 1px 5px;
 		border-radius: 3px;
 		flex-shrink: 0;

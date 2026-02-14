@@ -600,12 +600,12 @@
 	}
 
 	.input-status-offline {
-		background: rgba(224, 64, 64, 0.12);
+		background: var(--danger-bg);
 		color: var(--danger);
 	}
 
 	.input-status-warning {
-		background: rgba(240, 178, 50, 0.12);
+		background: var(--warning-bg);
 		color: var(--warning);
 	}
 

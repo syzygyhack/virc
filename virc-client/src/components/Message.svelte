@@ -321,7 +321,7 @@
 	}
 
 	.toolbar-btn-danger:hover {
-		background: rgba(224, 64, 64, 0.15);
+		background: var(--danger-bg);
 		color: var(--danger);
 	}
 

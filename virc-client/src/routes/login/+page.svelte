@@ -16,12 +16,15 @@
 	let mode: 'login' | 'register' = $state('login');
 
 	function defaultServerUrl(): string {
-		if (typeof window === 'undefined') return 'ws://localhost/ws';
+		if (typeof window === 'undefined') return '';
+		// Restore from last successful login
+		const saved = localStorage.getItem('virc:serverUrl');
+		if (saved) return saved;
 		// In dev mode, connect directly to Ergo's exposed WebSocket port
 		// to bypass the Vite proxy (which has issues relaying WebSocket frames on Windows).
-		// In production, Caddy proxies /ws to Ergo.
 		if (import.meta.env.DEV) return `ws://${window.location.hostname}:8097`;
-		return `ws://${window.location.host}/ws`;
+		// Desktop app — no sensible default; user must enter their server URL.
+		return '';
 	}
 
 	let serverUrl = $state(defaultServerUrl());
@@ -36,6 +39,10 @@
 	* fetch JWT, start refresh, navigate to /chat.
 	*/
 	async function handleLogin(): Promise<void> {
+		if (!serverUrl.trim()) {
+			error = 'Server URL is required.';
+			return;
+		}
 		if (!username.trim() || !password.trim()) {
 			error = 'Username and password are required.';
 			return;
@@ -119,6 +126,10 @@
 	* confirmation, then perform SASL login with the new account.
 	*/
 	async function handleRegister(): Promise<void> {
+		if (!serverUrl.trim()) {
+			error = 'Server URL is required.';
+			return;
+		}
 		if (!username.trim() || !password.trim()) {
 			error = 'Username and password are required.';
 			return;
@@ -349,7 +360,7 @@
 					type="text"
 					bind:value={serverUrl}
 					disabled={loading}
-					placeholder="ws://localhost/ws"
+					placeholder="ws://your-server/ws"
 				/>
 			</div>
 

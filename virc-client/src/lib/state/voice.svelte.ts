@@ -112,18 +112,21 @@ export function updateParticipant(
 	state: Partial<Omit<VoiceParticipant, 'nick'>>,
 ): void {
 	const existing = _participants.get(nick);
-	if (existing) {
-		if (state.isSpeaking !== undefined) existing.isSpeaking = state.isSpeaking;
-		if (state.isMuted !== undefined) existing.isMuted = state.isMuted;
-		if (state.isDeafened !== undefined) existing.isDeafened = state.isDeafened;
-	} else {
-		_participants.set(nick, {
-			nick,
-			isSpeaking: state.isSpeaking ?? false,
-			isMuted: state.isMuted ?? false,
-			isDeafened: state.isDeafened ?? false,
-		});
-	}
+	// Always replace the object (not mutate) so template re-renders pick up changes.
+	// The Map version counter triggers re-evaluation, but Svelte's keyed {#each}
+	// needs new object references to detect property changes on plain objects.
+	const base: VoiceParticipant = existing ?? {
+		nick,
+		isSpeaking: false,
+		isMuted: false,
+		isDeafened: false,
+	};
+	_participants.set(nick, {
+		nick,
+		isSpeaking: state.isSpeaking !== undefined ? state.isSpeaking : base.isSpeaking,
+		isMuted: state.isMuted !== undefined ? state.isMuted : base.isMuted,
+		isDeafened: state.isDeafened !== undefined ? state.isDeafened : base.isDeafened,
+	});
 	notifyMap();
 }
 

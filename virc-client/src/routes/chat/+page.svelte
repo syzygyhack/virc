@@ -467,11 +467,13 @@
 		// Rehydrate user state from localStorage
 		rehydrate();
 
-		// Determine server URLs from localStorage
-		const defaultWsUrl = import.meta.env.DEV
-			? `ws://${window.location.hostname}:8097`
-			: `ws://${window.location.host}/ws`;
-		const serverUrl = localStorage.getItem('virc:serverUrl') ?? defaultWsUrl;
+		// Determine server URLs from localStorage (set during login)
+		const serverUrl = localStorage.getItem('virc:serverUrl')
+			?? (import.meta.env.DEV ? `ws://${window.location.hostname}:8097` : null);
+		if (!serverUrl) {
+			error = 'No server URL configured. Please log in again.';
+			return;
+		}
 		const filesUrl = localStorage.getItem('virc:filesUrl') ?? null;
 
 		error = null;
@@ -1270,7 +1272,7 @@
 		justify-content: center;
 		gap: 8px;
 		padding: 6px 16px;
-		background: rgba(224, 64, 64, 0.15);
+		background: var(--danger-bg);
 		color: var(--danger);
 		font-size: var(--font-sm);
 		font-weight: var(--weight-medium);

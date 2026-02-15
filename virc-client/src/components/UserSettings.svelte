@@ -7,6 +7,16 @@
 	import { audioSettings, type VideoQuality } from '$lib/state/audioSettings.svelte';
 	import { appSettings, type ZoomLevel, type SystemMessageDisplay } from '$lib/state/appSettings.svelte';
 	import { themeState, setTheme, type Theme } from '$lib/state/theme.svelte';
+	import {
+		getRegisteredBindings,
+		setCustomBinding,
+		resetAllBindings,
+		hasCustomBindings,
+		formatCombo,
+		comboFromEvent,
+		type BindingInfo,
+		type KeyCombo,
+	} from '$lib/keybindings';
 	import type { IRCConnection } from '$lib/irc/connection';
 
 	interface Props {
@@ -16,7 +26,7 @@
 
 	let { onclose, connection = null }: Props = $props();
 
-	let activeTab: 'account' | 'voice' | 'appearance' | 'advanced' | 'about' = $state('account');
+	let activeTab: 'account' | 'voice' | 'appearance' | 'keybindings' | 'advanced' | 'about' = $state('account');
 
 	// Display name editing
 	let editingNick = $state(false);
@@ -31,12 +41,52 @@
 	// PTT keybind capture state
 	let capturingPTTKey = $state(false);
 
+	// Keybindings state
+	let keybindingsList: BindingInfo[] = $state([]);
+	let recordingAction: string | null = $state(null);
+
+	function refreshKeybindings(): void {
+		keybindingsList = getRegisteredBindings();
+	}
+
+	function startRecording(description: string): void {
+		recordingAction = description;
+	}
+
+	function cancelRecording(): void {
+		recordingAction = null;
+	}
+
+	function handleKeybindingCapture(e: KeyboardEvent): void {
+		if (!recordingAction) return;
+		e.preventDefault();
+		e.stopPropagation();
+
+		if (e.key === 'Escape') {
+			recordingAction = null;
+			return;
+		}
+
+		const combo = comboFromEvent(e);
+		if (!combo) return; // Bare modifier press — keep recording
+
+		setCustomBinding(recordingAction, combo);
+		recordingAction = null;
+		refreshKeybindings();
+	}
+
+	function handleResetAllBindings(): void {
+		resetAllBindings();
+		refreshKeybindings();
+	}
+
 	let initial = $derived((userState.nick ?? '?')[0].toUpperCase());
 
 	let tabTitle = $derived(
 		activeTab === 'account' ? 'My Account' :
 		activeTab === 'voice' ? 'Voice & Video' :
 		activeTab === 'appearance' ? 'Appearance' :
+		activeTab === 'keybindings' ? 'Keybindings' :
 		activeTab === 'advanced' ? 'Advanced' :
 		'About'
 	);
@@ -68,6 +118,11 @@
 	];
 
 	function handleKeydown(e: KeyboardEvent): void {
+		// Keybinding recording mode
+		if (recordingAction) {
+			handleKeybindingCapture(e);
+			return;
+		}
 		// PTT keybind capture mode
 		if (capturingPTTKey) {
 			e.preventDefault();
@@ -318,6 +373,15 @@
 		}
 	});
 
+	// Refresh keybindings list when switching to keybindings tab; cancel recording when leaving
+	$effect(() => {
+		if (activeTab === 'keybindings') {
+			refreshKeybindings();
+		} else if (recordingAction) {
+			recordingAction = null;
+		}
+	});
+
 	// Restart mic test when noise suppression is toggled so the user hears the difference.
 	let prevNS: boolean | undefined;
 	$effect(() => {
@@ -367,7 +431,7 @@
 				<button class="nav-item disabled" disabled>
 					Notifications
 				</button>
-				<button class="nav-item disabled" disabled>
+				<button class="nav-item" class:active={activeTab === 'keybindings'} onclick={() => activeTab = 'keybindings'}>
 					Keybinds
 				</button>
 				<button class="nav-item" class:active={activeTab === 'advanced'} onclick={() => activeTab = 'advanced'}>
@@ -630,7 +694,60 @@
 							{/each}
 						</div>
 					</div>
-				{:else if activeTab === 'advanced'}
+				{:else if activeTab === 'keybindings'}
+				<div class="settings-section">
+					<p class="setting-hint">Click Edit to rebind a shortcut. Press a new key combination, or Escape to cancel.</p>
+					<table class="keybindings-table">
+						<thead>
+							<tr>
+								<th class="kb-col-action">Action</th>
+								<th class="kb-col-shortcut">Shortcut</th>
+								<th class="kb-col-edit"></th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each keybindingsList as binding (binding.description)}
+								<tr class="kb-row" class:recording={recordingAction === binding.description}>
+									<td class="kb-action">{binding.description}</td>
+									<td class="kb-shortcut">
+										{#if recordingAction === binding.description}
+											<span class="kb-recording-label">Press a key combo...</span>
+										{:else}
+											<kbd class="kb-key">{formatCombo(binding.currentCombo)}</kbd>
+											{#if binding.currentCombo.key !== binding.defaultCombo.key || binding.currentCombo.ctrl !== binding.defaultCombo.ctrl || binding.currentCombo.alt !== binding.defaultCombo.alt || binding.currentCombo.shift !== binding.defaultCombo.shift}
+												<span class="kb-custom-badge">custom</span>
+											{/if}
+										{/if}
+									</td>
+									<td class="kb-edit-cell">
+										{#if recordingAction === binding.description}
+											<button class="kb-cancel-btn" onclick={cancelRecording}>Cancel</button>
+										{:else}
+											<button class="kb-edit-btn" onclick={() => startRecording(binding.description)}>Edit</button>
+										{/if}
+									</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+
+				{#if keybindingsList.length === 0}
+					<p class="setting-hint">No keyboard shortcuts registered. Open a chat channel first to load shortcuts.</p>
+				{/if}
+
+				<div class="section-divider"></div>
+
+				<div class="settings-section">
+					<button
+						class="reset-defaults-btn"
+						onclick={handleResetAllBindings}
+						disabled={!hasCustomBindings()}
+					>
+						Reset to Defaults
+					</button>
+				</div>
+			{:else if activeTab === 'advanced'}
 				<div class="settings-section">
 					<h3 class="section-title">Debug</h3>
 					<label class="toggle-row">
@@ -1284,6 +1401,148 @@
 	@keyframes pulse-border {
 		0%, 100% { border-color: var(--accent-primary); }
 		50% { border-color: transparent; }
+	}
+
+	/* ---- Keybindings Tab ---- */
+
+	.keybindings-table {
+		width: 100%;
+		border-collapse: collapse;
+		font-size: var(--font-sm);
+	}
+
+	.keybindings-table th {
+		text-align: left;
+		font-size: var(--font-xs);
+		font-weight: var(--weight-semibold);
+		color: var(--text-muted);
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		padding: 6px 8px;
+		border-bottom: 1px solid var(--surface-highest);
+	}
+
+	.kb-col-action {
+		width: 50%;
+	}
+
+	.kb-col-shortcut {
+		width: 35%;
+	}
+
+	.kb-col-edit {
+		width: 15%;
+		text-align: right;
+	}
+
+	.kb-row {
+		border-bottom: 1px solid var(--surface-high);
+		transition: background var(--duration-channel);
+	}
+
+	.kb-row:hover {
+		background: var(--surface-high);
+	}
+
+	.kb-row.recording {
+		background: var(--accent-bg);
+	}
+
+	.kb-action {
+		padding: 10px 8px;
+		color: var(--text-primary);
+	}
+
+	.kb-shortcut {
+		padding: 10px 8px;
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.kb-key {
+		display: inline-block;
+		padding: 2px 8px;
+		background: var(--surface-low);
+		border: 1px solid var(--surface-highest);
+		border-radius: 4px;
+		font-family: var(--font-mono);
+		font-size: var(--font-xs);
+		color: var(--text-primary);
+	}
+
+	.kb-custom-badge {
+		font-size: 10px;
+		color: var(--accent-primary);
+		font-weight: var(--weight-semibold);
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+	}
+
+	.kb-recording-label {
+		color: var(--accent-primary);
+		font-style: italic;
+		animation: pulse-border 1s ease-in-out infinite;
+	}
+
+	.kb-edit-cell {
+		padding: 10px 8px;
+		text-align: right;
+	}
+
+	.kb-edit-btn {
+		padding: 2px 12px;
+		background: var(--surface-high);
+		color: var(--text-secondary);
+		border: none;
+		border-radius: 3px;
+		font-size: var(--font-xs);
+		font-family: var(--font-primary);
+		cursor: pointer;
+		transition: background var(--duration-channel), color var(--duration-channel);
+	}
+
+	.kb-edit-btn:hover {
+		background: var(--surface-highest);
+		color: var(--text-primary);
+	}
+
+	.kb-cancel-btn {
+		padding: 2px 12px;
+		background: none;
+		color: var(--text-muted);
+		border: none;
+		border-radius: 3px;
+		font-size: var(--font-xs);
+		font-family: var(--font-primary);
+		cursor: pointer;
+	}
+
+	.kb-cancel-btn:hover {
+		color: var(--text-primary);
+	}
+
+	.reset-defaults-btn {
+		padding: 8px 20px;
+		background: var(--surface-high);
+		color: var(--text-secondary);
+		border: none;
+		border-radius: 4px;
+		font-size: var(--font-sm);
+		font-family: var(--font-primary);
+		font-weight: var(--weight-medium);
+		cursor: pointer;
+		transition: background var(--duration-channel), color var(--duration-channel);
+	}
+
+	.reset-defaults-btn:hover:not(:disabled) {
+		background: var(--surface-highest);
+		color: var(--text-primary);
+	}
+
+	.reset-defaults-btn:disabled {
+		opacity: 0.5;
+		cursor: default;
 	}
 
 	/* ---- Disabled nav items (scaffolded) ---- */

@@ -45,4 +45,11 @@ export const env = {
   get ALLOWED_ORIGIN() {
     return optional("ALLOWED_ORIGIN", "");
   },
+  get UPLOAD_DIR() {
+    return optional("UPLOAD_DIR", "./uploads");
+  },
+  /** Maximum upload file size in bytes. Default: 25MB. */
+  get MAX_FILE_SIZE() {
+    return parseInt(optional("MAX_FILE_SIZE", String(25 * 1024 * 1024)), 10);
+  },
 } as const;

@@ -2,6 +2,7 @@
 	import { renderMessage, nickColor } from '$lib/irc/format';
 	import { getMessage } from '$lib/state/messages.svelte';
 	import { userState } from '$lib/state/user.svelte';
+	import { extractMediaUrls } from '$lib/media';
 	import type { Message } from '$lib/state/messages.svelte';
 
 	interface Props {
@@ -43,6 +44,34 @@
 		if (message.isRedacted) return '';
 		return renderMessage(message.text, userState.account ?? '');
 	});
+
+	let mediaUrls = $derived.by(() => {
+		if (message.isRedacted) return [];
+		return extractMediaUrls(message.text);
+	});
+
+	let lightboxUrl = $state<string | null>(null);
+
+	function openLightbox(url: string) {
+		lightboxUrl = url;
+	}
+
+	function closeLightbox() {
+		lightboxUrl = null;
+	}
+
+	function handleLightboxKeydown(e: KeyboardEvent) {
+		if (e.key === 'Escape') {
+			closeLightbox();
+		}
+	}
+
+	function handleLightboxClick(e: MouseEvent) {
+		// Close if clicking the overlay backdrop (not the image itself)
+		if (e.target === e.currentTarget) {
+			closeLightbox();
+		}
+	}
 
 	let timestamp = $derived(
 		message.time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -159,6 +188,31 @@
 					<div class="message-text redacted">[message deleted]</div>
 				{:else}
 					<div class="message-text">{@html renderedText}</div>
+					{#if mediaUrls.length > 0}
+						<div class="media-previews">
+							{#each mediaUrls as media (media.url)}
+								{#if media.type === 'image'}
+									<button class="media-thumbnail-btn" onclick={() => openLightbox(media.url)}>
+										<img
+											class="media-thumbnail"
+											src={media.url}
+											alt="Image preview"
+											loading="lazy"
+										/>
+									</button>
+								{:else if media.type === 'video'}
+									<video class="media-video" controls preload="metadata">
+										<source src={media.url} />
+										<track kind="captions" />
+									</video>
+								{:else if media.type === 'audio'}
+									<audio class="media-audio" controls preload="metadata">
+										<source src={media.url} />
+									</audio>
+								{/if}
+							{/each}
+						</div>
+					{/if}
 				{/if}
 			</div>
 		</div>
@@ -171,6 +225,31 @@
 				<div class="message-text redacted">[message deleted]</div>
 			{:else}
 				<div class="message-text">{@html renderedText}</div>
+				{#if mediaUrls.length > 0}
+					<div class="media-previews">
+						{#each mediaUrls as media (media.url)}
+							{#if media.type === 'image'}
+								<button class="media-thumbnail-btn" onclick={() => openLightbox(media.url)}>
+									<img
+										class="media-thumbnail"
+										src={media.url}
+										alt="Image preview"
+										loading="lazy"
+									/>
+								</button>
+							{:else if media.type === 'video'}
+								<video class="media-video" controls preload="metadata">
+									<source src={media.url} />
+									<track kind="captions" />
+								</video>
+							{:else if media.type === 'audio'}
+								<audio class="media-audio" controls preload="metadata">
+									<source src={media.url} />
+								</audio>
+							{/if}
+						{/each}
+					</div>
+				{/if}
 			{/if}
 		</div>
 	{/if}
@@ -200,6 +279,24 @@
 		</div>
 	{/if}
 </div>
+
+{#if lightboxUrl}
+	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+	<div
+		class="lightbox-overlay"
+		role="dialog"
+		aria-label="Image preview"
+		onclick={handleLightboxClick}
+		onkeydown={handleLightboxKeydown}
+	>
+		<button class="lightbox-close" onclick={closeLightbox} aria-label="Close preview">
+			<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+				<path d="M18.3 5.7a1 1 0 00-1.4 0L12 10.6 7.1 5.7a1 1 0 00-1.4 1.4L10.6 12l-4.9 4.9a1 1 0 101.4 1.4L12 13.4l4.9 4.9a1 1 0 001.4-1.4L13.4 12l4.9-4.9a1 1 0 000-1.4z"/>
+			</svg>
+		</button>
+		<img class="lightbox-image" src={lightboxUrl} alt="Full size preview" />
+	</div>
+{/if}
 
 <style>
 	.message {
@@ -475,6 +572,92 @@
 
 	.message-text :global(.channel-ref:hover) {
 		text-decoration: underline;
+	}
+
+	/* Media Previews */
+	.media-previews {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		padding: 6px 0 2px 0;
+	}
+
+	.media-thumbnail-btn {
+		display: block;
+		padding: 0;
+		border: none;
+		background: none;
+		cursor: pointer;
+		border-radius: 4px;
+		overflow: hidden;
+		max-width: 400px;
+	}
+
+	.media-thumbnail-btn:hover {
+		opacity: 0.9;
+	}
+
+	.media-thumbnail {
+		display: block;
+		max-width: 400px;
+		max-height: 300px;
+		width: auto;
+		height: auto;
+		object-fit: contain;
+		border-radius: 4px;
+		background: var(--surface-high);
+	}
+
+	.media-video {
+		display: block;
+		max-width: 400px;
+		max-height: 300px;
+		border-radius: 4px;
+		background: var(--surface-lowest);
+	}
+
+	.media-audio {
+		display: block;
+		max-width: 400px;
+		width: 100%;
+		height: 36px;
+		border-radius: 4px;
+	}
+
+	/* Lightbox Overlay */
+	.lightbox-overlay {
+		position: fixed;
+		inset: 0;
+		z-index: 1000;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: rgba(0, 0, 0, 0.85);
+	}
+
+	.lightbox-close {
+		position: absolute;
+		top: 16px;
+		right: 16px;
+		padding: 8px;
+		border: none;
+		border-radius: 4px;
+		background: rgba(0, 0, 0, 0.5);
+		color: #fff;
+		cursor: pointer;
+		z-index: 1001;
+		transition: background var(--duration-message) ease;
+	}
+
+	.lightbox-close:hover {
+		background: rgba(255, 255, 255, 0.15);
+	}
+
+	.lightbox-image {
+		max-width: 90vw;
+		max-height: 90vh;
+		object-fit: contain;
+		border-radius: 4px;
 	}
 
 	/* Reactions Bar */

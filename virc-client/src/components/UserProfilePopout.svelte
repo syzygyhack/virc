@@ -1,0 +1,356 @@
+<script lang="ts">
+	import { getMember } from '$lib/state/members.svelte';
+	import { channelUIState, openDM } from '$lib/state/channels.svelte';
+	import { nickColor } from '$lib/irc/format';
+
+	/**
+	 * Default role definitions matching MemberList.svelte.
+	 * When virc.json config is loaded, roles could be overridden from there.
+	 */
+	const ROLE_MAP: Record<string, { name: string; color: string }> = {
+		'~': { name: 'Owner', color: '#e0a040' },
+		'&': { name: 'Admin', color: '#e05050' },
+		'@': { name: 'Moderator', color: '#50a0e0' },
+		'%': { name: 'Helper', color: '#50e0a0' },
+		'+': { name: 'Member', color: '#a0a0a0' },
+	};
+
+	interface Props {
+		nick: string;
+		account: string;
+		/** Channel to look up roles in. Defaults to active channel. */
+		channel?: string;
+		/** Anchor position (click point). */
+		position: { x: number; y: number };
+		/** Optional avatar URL (from draft/metadata-2, not yet implemented). */
+		avatarUrl?: string | null;
+		/** Optional bio text (from draft/metadata-2, not yet implemented). */
+		bio?: string | null;
+		/** Callback when the popout should close. */
+		onclose: () => void;
+	}
+
+	let {
+		nick,
+		account,
+		channel,
+		position,
+		avatarUrl = null,
+		bio = null,
+		onclose,
+	}: Props = $props();
+
+	let popoutEl: HTMLDivElement | undefined = $state();
+
+	/** Resolve channel for role lookup. */
+	let resolvedChannel = $derived(channel ?? channelUIState.activeChannel ?? '');
+
+	/** Look up member data from state. */
+	let member = $derived(getMember(resolvedChannel, nick));
+
+	/** Nick color based on account hash. */
+	let color = $derived(nickColor(account));
+
+	/** First letter for the letter avatar. */
+	let initial = $derived(nick.charAt(0).toUpperCase());
+
+	/** Presence info. */
+	let presence = $derived.by((): { label: string; className: string } => {
+		const p = member?.presence ?? 'offline';
+		switch (p) {
+			case 'online': return { label: 'Online', className: 'presence-online' };
+			case 'idle': return { label: 'Idle', className: 'presence-idle' };
+			case 'dnd': return { label: 'Do Not Disturb', className: 'presence-dnd' };
+			case 'offline': return { label: 'Offline', className: 'presence-offline' };
+		}
+	});
+
+	/** Build role badges from member modes. */
+	let roles = $derived.by((): Array<{ name: string; color: string }> => {
+		if (!member) return [];
+		return member.modes
+			.map((mode) => ROLE_MAP[mode])
+			.filter((r): r is { name: string; color: string } => r != null);
+	});
+
+	/** Compute popout position that stays within viewport. */
+	let style = $derived.by(() => {
+		const popoutWidth = 280;
+		const popoutMaxHeight = 400;
+		const margin = 8;
+
+		let x = position.x;
+		let y = position.y;
+
+		// Adjust horizontal: keep within viewport
+		if (x + popoutWidth + margin > window.innerWidth) {
+			x = window.innerWidth - popoutWidth - margin;
+		}
+		if (x < margin) {
+			x = margin;
+		}
+
+		// Adjust vertical: prefer below click, flip above if no room
+		if (y + popoutMaxHeight + margin > window.innerHeight) {
+			y = Math.max(margin, y - popoutMaxHeight);
+		}
+
+		return `left: ${x}px; top: ${y}px;`;
+	});
+
+	/** Close on click outside. */
+	function handleMouseDown(event: MouseEvent) {
+		if (popoutEl && !popoutEl.contains(event.target as Node)) {
+			onclose();
+		}
+	}
+
+	/** Close on Escape. */
+	function handleKeydown(event: KeyboardEvent) {
+		if (event.key === 'Escape') {
+			event.preventDefault();
+			onclose();
+		}
+	}
+
+	/** "Send Message" button opens DM conversation. */
+	function handleSendMessage() {
+		openDM(nick, account);
+		onclose();
+	}
+
+	$effect(() => {
+		document.addEventListener('mousedown', handleMouseDown);
+		return () => {
+			document.removeEventListener('mousedown', handleMouseDown);
+		};
+	});
+</script>
+
+<svelte:window onkeydown={handleKeydown} />
+
+<div
+	class="profile-popout"
+	role="dialog"
+	aria-label="User profile: {nick}"
+	bind:this={popoutEl}
+	{style}
+>
+	<!-- Avatar -->
+	<div class="profile-avatar-section">
+		{#if avatarUrl}
+			<img class="profile-avatar" src={avatarUrl} alt="{nick}'s avatar" />
+		{:else}
+			<div class="profile-avatar-letter" style="background-color: {color}">
+				{initial}
+			</div>
+		{/if}
+		<span class="presence-badge {presence.className}" title={presence.label}></span>
+	</div>
+
+	<!-- Name -->
+	<div class="profile-name-section">
+		<span class="profile-display-name" style="color: {color}">{nick}</span>
+		{#if account}
+			<span class="profile-account">@{account}</span>
+		{/if}
+	</div>
+
+	<div class="profile-divider"></div>
+
+	<!-- Bio (when available) -->
+	{#if bio}
+		<div class="profile-section">
+			<div class="profile-section-label">About</div>
+			<div class="profile-bio">{bio}</div>
+		</div>
+		<div class="profile-divider"></div>
+	{/if}
+
+	<!-- Roles -->
+	{#if roles.length > 0}
+		<div class="profile-section">
+			<div class="profile-section-label">Roles</div>
+			<div class="profile-roles">
+				{#each roles as role}
+					<span class="role-badge" style="border-color: {role.color}; color: {role.color}">
+						<span class="role-dot" style="background-color: {role.color}"></span>
+						{role.name}
+					</span>
+				{/each}
+			</div>
+		</div>
+		<div class="profile-divider"></div>
+	{/if}
+
+	<!-- Actions -->
+	<div class="profile-actions">
+		<button class="profile-send-message" onclick={handleSendMessage}>
+			Send Message
+		</button>
+	</div>
+</div>
+
+<style>
+	.profile-popout {
+		position: fixed;
+		z-index: 1200;
+		width: 280px;
+		background: var(--surface-high);
+		border-radius: 8px;
+		box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+		overflow: hidden;
+	}
+
+	/* Avatar section */
+	.profile-avatar-section {
+		position: relative;
+		display: flex;
+		justify-content: center;
+		padding: 20px 20px 8px;
+	}
+
+	.profile-avatar {
+		width: 80px;
+		height: 80px;
+		border-radius: 50%;
+		object-fit: cover;
+	}
+
+	.profile-avatar-letter {
+		width: 80px;
+		height: 80px;
+		border-radius: 50%;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-size: 32px;
+		font-weight: var(--weight-semibold);
+		color: var(--text-inverse);
+	}
+
+	.presence-badge {
+		position: absolute;
+		bottom: 10px;
+		right: calc(50% - 44px);
+		width: 16px;
+		height: 16px;
+		border-radius: 50%;
+		border: 3px solid var(--surface-high);
+	}
+
+	.presence-badge.presence-online {
+		background: var(--status-online);
+	}
+
+	.presence-badge.presence-idle {
+		background: var(--status-idle);
+	}
+
+	.presence-badge.presence-dnd {
+		background: var(--status-dnd);
+	}
+
+	.presence-badge.presence-offline {
+		background: var(--status-offline);
+	}
+
+	/* Name section */
+	.profile-name-section {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		padding: 4px 20px 12px;
+	}
+
+	.profile-display-name {
+		font-size: var(--font-lg);
+		font-weight: var(--weight-semibold);
+	}
+
+	.profile-account {
+		font-size: var(--font-sm);
+		color: var(--text-secondary);
+		margin-top: 2px;
+	}
+
+	/* Divider */
+	.profile-divider {
+		height: 1px;
+		background: var(--surface-highest);
+		margin: 0 16px;
+	}
+
+	/* Sections */
+	.profile-section {
+		padding: 12px 16px;
+	}
+
+	.profile-section-label {
+		font-size: var(--font-xs);
+		font-weight: var(--weight-semibold);
+		color: var(--text-secondary);
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		margin-bottom: 8px;
+	}
+
+	.profile-bio {
+		font-size: var(--font-sm);
+		color: var(--text-primary);
+		line-height: 1.4;
+		word-wrap: break-word;
+	}
+
+	/* Roles */
+	.profile-roles {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px;
+	}
+
+	.role-badge {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		padding: 2px 8px;
+		border: 1px solid;
+		border-radius: 12px;
+		font-size: var(--font-xs);
+		font-weight: var(--weight-medium);
+	}
+
+	.role-dot {
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		flex-shrink: 0;
+	}
+
+	/* Actions */
+	.profile-actions {
+		padding: 12px 16px;
+	}
+
+	.profile-send-message {
+		width: 100%;
+		padding: 8px 16px;
+		border: none;
+		border-radius: 4px;
+		background: var(--accent-primary);
+		color: #fff;
+		font-family: var(--font-primary);
+		font-size: var(--font-sm);
+		font-weight: var(--weight-medium);
+		cursor: pointer;
+		transition: filter var(--duration-channel);
+	}
+
+	.profile-send-message:hover {
+		filter: brightness(1.1);
+	}
+
+	.profile-send-message:active {
+		filter: brightness(0.95);
+	}
+</style>

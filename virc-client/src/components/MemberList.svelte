@@ -2,6 +2,7 @@
 	import { memberState, getMembersByRole, type Member } from '$lib/state/members.svelte';
 	import { channelUIState, openDM } from '$lib/state/channels.svelte';
 	import { nickColor } from '$lib/irc/format';
+	import UserProfilePopout from './UserProfilePopout.svelte';
 
 	/**
 	* Default role definitions matching virc-files/src/routes/config.ts.
@@ -37,6 +38,9 @@
 
 	/** Context menu state. */
 	let contextMenu: { nick: string; x: number; y: number } | null = $state(null);
+
+	/** Profile popout state. */
+	let profilePopout: { nick: string; account: string; x: number; y: number } | null = $state(null);
 
 	/**
 	* Build role groups from member state. Groups members by highest mode,
@@ -164,6 +168,26 @@
 			closeContextMenu();
 		}
 	}
+
+	/** Open profile popout on left-click of a member. */
+	function handleMemberClick(event: MouseEvent, member: Member): void {
+		// Don't open popout if this was a right-click (context menu handles that)
+		if (event.button !== 0) return;
+		event.stopPropagation();
+		// Close context menu if open
+		closeContextMenu();
+		profilePopout = {
+			nick: member.nick,
+			account: member.account,
+			x: event.clientX,
+			y: event.clientY,
+		};
+	}
+
+	/** Close profile popout. */
+	function closeProfilePopout(): void {
+		profilePopout = null;
+	}
 </script>
 
 <svelte:window onclick={handleWindowClick} />
@@ -205,6 +229,7 @@
 								role="option"
 								tabindex="0"
 								aria-selected="false"
+								onclick={(e) => handleMemberClick(e, member)}
 								oncontextmenu={(e) => handleContextMenu(e, member.nick)}
 								onkeydown={(e) => handleMemberKeydown(e, member.nick)}
 							>
@@ -232,6 +257,16 @@
 		<button class="context-item" role="menuitem" onclick={handleSendMessage}>Send Message</button>
 		<button class="context-item" role="menuitem" onclick={handleMention}>Mention</button>
 	</div>
+{/if}
+
+<!-- User profile popout -->
+{#if profilePopout}
+	<UserProfilePopout
+		nick={profilePopout.nick}
+		account={profilePopout.account}
+		position={{ x: profilePopout.x, y: profilePopout.y }}
+		onclose={closeProfilePopout}
+	/>
 {/if}
 
 <style>

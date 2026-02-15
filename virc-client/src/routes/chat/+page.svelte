@@ -46,6 +46,7 @@
 	import ErrorBoundary from '../../components/ErrorBoundary.svelte';
 	import ConnectionBanner from '../../components/ConnectionBanner.svelte';
 	import VoiceOverlay from '../../components/VoiceOverlay.svelte';
+	import ServerList from '../../components/ServerList.svelte';
 	import { applyServerTheme, clearServerTheme, parseServerTheme } from '$lib/state/theme.svelte';
 
 	/** virc.json config shape (subset we consume). */
@@ -1210,6 +1211,9 @@
 <svelte:window bind:innerWidth={innerWidth} />
 
 <div class="chat-layout">
+	<!-- Far left: Server list strip -->
+	<ServerList />
+
 	<!-- Left column: Channel sidebar -->
 	<div class="left-panel" class:overlay={sidebarIsOverlay} class:visible={sidebarIsOverlay && showSidebar}>
 		<ChannelSidebar onVoiceChannelClick={handleVoiceChannelClick} {voiceRoom} onSettingsClick={() => (showSettings = true)} onVoiceExpand={() => (showVoiceOverlay = true)} />
@@ -1371,7 +1375,7 @@
 	.left-panel.overlay {
 		position: fixed;
 		top: 0;
-		left: 0;
+		left: 56px;
 		height: 100%;
 		z-index: 200;
 		transform: translateX(-100%);

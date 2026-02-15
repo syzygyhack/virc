@@ -352,6 +352,47 @@ export function isPinned(target: string, msgid: string): boolean {
 	return pinnedMessages.get(target)?.has(msgid) ?? false;
 }
 
+/**
+ * Search messages in a channel buffer by text content.
+ * Supports filters:
+ *   from:username — filter by nick (case-insensitive)
+ *   in:#channel   — search in a different channel instead
+ *
+ * Only searches privmsg type messages and excludes redacted messages.
+ * Returns matching messages in buffer order.
+ */
+export function searchMessages(defaultChannel: string, query: string): Message[] {
+	const trimmed = query.trim();
+	if (!trimmed) return [];
+
+	let channel = defaultChannel;
+	let fromFilter: string | null = null;
+	const textParts: string[] = [];
+
+	// Parse filters from query tokens
+	for (const token of trimmed.split(/\s+/)) {
+		if (token.toLowerCase().startsWith('in:')) {
+			channel = token.slice(3);
+		} else if (token.toLowerCase().startsWith('from:')) {
+			fromFilter = token.slice(5).toLowerCase();
+		} else {
+			textParts.push(token);
+		}
+	}
+
+	const textQuery = textParts.join(' ').toLowerCase();
+	const msgs = channelMessages.get(channel);
+	if (!msgs) return [];
+
+	return msgs.filter((m) => {
+		if (m.type !== 'privmsg') return false;
+		if (m.isRedacted) return false;
+		if (fromFilter && m.nick.toLowerCase() !== fromFilter) return false;
+		if (textQuery && !m.text.toLowerCase().includes(textQuery)) return false;
+		return true;
+	});
+}
+
 /** Reset all message state. */
 export function resetMessages(): void {
 	channelMessages.clear();

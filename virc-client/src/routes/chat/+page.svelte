@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount, onDestroy } from 'svelte';
+	import { onMount, onDestroy, tick } from 'svelte';
 	import { IRCConnection } from '$lib/irc/connection';
 	import { negotiateCaps } from '$lib/irc/cap';
 	import { authenticateSASL } from '$lib/irc/sasl';
@@ -49,6 +49,7 @@
 	import VoiceOverlay from '../../components/VoiceOverlay.svelte';
 	import ServerList from '../../components/ServerList.svelte';
 	import RawIrcPanel from '../../components/RawIrcPanel.svelte';
+	import SearchPanel from '../../components/SearchPanel.svelte';
 	import UserProfilePopout from '../../components/UserProfilePopout.svelte';
 	import { appSettings } from '$lib/state/appSettings.svelte';
 	import { applyServerTheme, clearServerTheme, parseServerTheme } from '$lib/state/theme.svelte';
@@ -103,6 +104,10 @@
 
 	// Quick switcher state
 	let showQuickSwitcher = $state(false);
+
+	// Search panel state
+	let showSearch = $state(false);
+	let searchPanelRef: SearchPanel | undefined = $state(undefined);
 
 	// Settings modal state
 	let showSettings = $state(false);
@@ -275,6 +280,10 @@
 		hasAttemptedRegister = true;
 		conn.send('CS REGISTER #general');
 	});
+
+	function toggleSearch(): void {
+		showSearch = !showSearch;
+	}
 
 	function toggleMembers(): void {
 		showMembers = !showMembers;
@@ -1028,6 +1037,19 @@
 				},
 				description: 'Navigate to next unread channel',
 			},
+			// Ctrl+Shift+F — Search messages
+			{
+				key: 'F',
+				ctrl: true,
+				shift: true,
+				handler: () => {
+					showSearch = true;
+					// Focus the search input after panel renders
+					tick().then(() => searchPanelRef?.focusInput());
+					return true;
+				},
+				description: 'Search messages',
+			},
 			// Escape — Close modals, cancel reply, close emoji picker
 			{
 				key: 'Escape',
@@ -1047,6 +1069,10 @@
 					}
 					if (showQuickSwitcher) {
 						showQuickSwitcher = false;
+						return true;
+					}
+					if (showSearch) {
+						showSearch = false;
 						return true;
 					}
 					if (deleteTarget) {
@@ -1302,6 +1328,8 @@
 			onVoiceCall={handleDMVoiceCall}
 			onVideoCall={handleDMVideoCall}
 			onScrollToMessage={handleScrollToMessage}
+			onToggleSearch={toggleSearch}
+			searchVisible={showSearch}
 		/>
 
 		<div class="message-area">
@@ -1343,6 +1371,14 @@
 
 			{#if appSettings.showRawIrc}
 				<RawIrcPanel />
+			{/if}
+
+			{#if showSearch}
+				<SearchPanel
+					bind:this={searchPanelRef}
+					onclose={() => (showSearch = false)}
+					onscrolltomessage={handleScrollToMessage}
+				/>
 			{/if}
 		</div>
 

@@ -18,6 +18,7 @@ import {
 	unpinMessage,
 	getPinnedMessages,
 	isPinned,
+	searchMessages,
 	type Message,
 } from './messages.svelte';
 
@@ -424,6 +425,85 @@ describe('message state', () => {
 			pinMessage('#test', 'msg-1');
 			resetMessages();
 			expect(isPinned('#test', 'msg-1')).toBe(false);
+		});
+	});
+
+	describe('searchMessages', () => {
+		it('finds messages by text content', () => {
+			addMessage('#test', makeMessage({ msgid: 's1', text: 'hello world' }));
+			addMessage('#test', makeMessage({ msgid: 's2', text: 'goodbye world' }));
+			addMessage('#test', makeMessage({ msgid: 's3', text: 'hello there' }));
+			const results = searchMessages('#test', 'hello');
+			expect(results).toHaveLength(2);
+			expect(results.map((m) => m.msgid)).toEqual(['s1', 's3']);
+		});
+
+		it('search is case-insensitive', () => {
+			addMessage('#test', makeMessage({ msgid: 's1', text: 'Hello World' }));
+			const results = searchMessages('#test', 'hello');
+			expect(results).toHaveLength(1);
+			expect(results[0].msgid).toBe('s1');
+		});
+
+		it('returns empty array for no matches', () => {
+			addMessage('#test', makeMessage({ msgid: 's1', text: 'hello' }));
+			const results = searchMessages('#test', 'xyz');
+			expect(results).toHaveLength(0);
+		});
+
+		it('returns empty array for empty query', () => {
+			addMessage('#test', makeMessage({ msgid: 's1', text: 'hello' }));
+			const results = searchMessages('#test', '');
+			expect(results).toHaveLength(0);
+		});
+
+		it('filters by from:username', () => {
+			addMessage('#test', makeMessage({ msgid: 's1', nick: 'alice', text: 'hello' }));
+			addMessage('#test', makeMessage({ msgid: 's2', nick: 'bob', text: 'hello' }));
+			addMessage('#test', makeMessage({ msgid: 's3', nick: 'alice', text: 'world' }));
+			const results = searchMessages('#test', 'from:alice');
+			expect(results).toHaveLength(2);
+			expect(results.map((m) => m.msgid)).toEqual(['s1', 's3']);
+		});
+
+		it('combines from: filter with text search', () => {
+			addMessage('#test', makeMessage({ msgid: 's1', nick: 'alice', text: 'hello world' }));
+			addMessage('#test', makeMessage({ msgid: 's2', nick: 'bob', text: 'hello world' }));
+			addMessage('#test', makeMessage({ msgid: 's3', nick: 'alice', text: 'goodbye' }));
+			const results = searchMessages('#test', 'from:alice hello');
+			expect(results).toHaveLength(1);
+			expect(results[0].msgid).toBe('s1');
+		});
+
+		it('searches across channels with in:#channel filter', () => {
+			addMessage('#general', makeMessage({ msgid: 's1', target: '#general', text: 'hello from general' }));
+			addMessage('#random', makeMessage({ msgid: 's2', target: '#random', text: 'hello from random' }));
+			addMessage('#test', makeMessage({ msgid: 's3', target: '#test', text: 'hello from test' }));
+			// Search in #general while providing any channel as the default
+			const results = searchMessages('#test', 'in:#general hello');
+			expect(results).toHaveLength(1);
+			expect(results[0].msgid).toBe('s1');
+		});
+
+		it('excludes redacted messages', () => {
+			addMessage('#test', makeMessage({ msgid: 's1', text: 'hello' }));
+			addMessage('#test', makeMessage({ msgid: 's2', text: 'hello', isRedacted: true }));
+			const results = searchMessages('#test', 'hello');
+			expect(results).toHaveLength(1);
+			expect(results[0].msgid).toBe('s1');
+		});
+
+		it('only searches privmsg type messages', () => {
+			addMessage('#test', makeMessage({ msgid: 's1', text: 'alice joined', type: 'join' }));
+			addMessage('#test', makeMessage({ msgid: 's2', text: 'hello', type: 'privmsg' }));
+			const results = searchMessages('#test', 'alice');
+			expect(results).toHaveLength(0);
+		});
+
+		it('from: filter is case-insensitive', () => {
+			addMessage('#test', makeMessage({ msgid: 's1', nick: 'Alice', text: 'hello' }));
+			const results = searchMessages('#test', 'from:alice');
+			expect(results).toHaveLength(1);
 		});
 	});
 });

@@ -16,9 +16,11 @@
 		onVoiceCall?: (target: string) => void;
 		onVideoCall?: (target: string) => void;
 		onScrollToMessage?: (msgid: string) => void;
+		onToggleSearch?: () => void;
+		searchVisible?: boolean;
 	}
 
-	let { onToggleMembers, membersVisible = false, onTopicEdit, onToggleSidebar, showSidebarToggle = false, onVoiceCall, onVideoCall, onScrollToMessage }: Props = $props();
+	let { onToggleMembers, membersVisible = false, onTopicEdit, onToggleSidebar, showSidebarToggle = false, onVoiceCall, onVideoCall, onScrollToMessage, onToggleSearch, searchVisible = false }: Props = $props();
 
 	let channelInfo = $derived(
 		channelUIState.activeChannel
@@ -247,6 +249,18 @@
 				</div>
 			{/if}
 		</div>
+		<button
+			class="action-button"
+			class:active={searchVisible}
+			title="Search Messages"
+			aria-label="Search Messages"
+			onclick={onToggleSearch}
+		>
+			<svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+				<circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2" />
+				<path d="M16.5 16.5L21 21" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+			</svg>
+		</button>
 		<button
 			class="action-button"
 			class:active={membersVisible}

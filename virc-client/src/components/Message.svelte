@@ -5,6 +5,8 @@
 	import { appSettings } from '$lib/state/appSettings.svelte';
 	import { extractMediaUrls } from '$lib/media';
 	import { getCustomEmojiUrl } from '$lib/emoji';
+	import { extractPreviewUrl, fetchPreview, getCachedPreview, type LinkPreview } from '$lib/files/preview';
+	import { getToken } from '$lib/api/auth';
 	import type { Message } from '$lib/state/messages.svelte';
 
 	interface Props {
@@ -62,6 +64,48 @@
 	let mediaUrls = $derived.by(() => {
 		if (message.isRedacted) return [];
 		return extractMediaUrls(message.text);
+	});
+
+	let previewUrl = $derived.by(() => {
+		if (message.isRedacted) return null;
+		return extractPreviewUrl(message.text);
+	});
+
+	let linkPreview = $state<LinkPreview | null>(null);
+	let previewLoading = $state(false);
+
+	$effect(() => {
+		const url = previewUrl;
+		if (!url) {
+			linkPreview = null;
+			previewLoading = false;
+			return;
+		}
+
+		// Check cache first (synchronous)
+		const cached = getCachedPreview(url);
+		if (cached !== undefined) {
+			linkPreview = cached;
+			previewLoading = false;
+			return;
+		}
+
+		const token = getToken();
+		const filesUrl = typeof localStorage !== 'undefined'
+			? localStorage.getItem('virc:filesUrl')
+			: null;
+
+		if (!token || !filesUrl) {
+			linkPreview = null;
+			previewLoading = false;
+			return;
+		}
+
+		previewLoading = true;
+		fetchPreview(url, token, filesUrl).then((result) => {
+			linkPreview = result;
+			previewLoading = false;
+		});
 	});
 
 	let lightboxUrl = $state<string | null>(null);
@@ -267,6 +311,37 @@
 		</div>
 	{/if}
 
+	{#if !message.isRedacted && (linkPreview || previewLoading)}
+		<div class="compact-media-row">
+			<span class="compact-timestamp"></span>
+			<span class="compact-nick"></span>
+			{#if previewLoading}
+				<div class="link-preview-card link-preview-skeleton">
+					<div class="skeleton-line skeleton-site-name"></div>
+					<div class="skeleton-line skeleton-title"></div>
+					<div class="skeleton-line skeleton-desc"></div>
+				</div>
+			{:else if linkPreview}
+				<a class="link-preview-card" href={linkPreview.url} target="_blank" rel="noopener noreferrer">
+					<div class="link-preview-text">
+						{#if linkPreview.siteName}
+							<span class="link-preview-site">{linkPreview.siteName}</span>
+						{/if}
+						{#if linkPreview.title}
+							<span class="link-preview-title">{linkPreview.title}</span>
+						{/if}
+						{#if linkPreview.description}
+							<span class="link-preview-desc">{linkPreview.description}</span>
+						{/if}
+					</div>
+					{#if linkPreview.image}
+						<img class="link-preview-thumb" src={linkPreview.image} alt="" loading="lazy" />
+					{/if}
+				</a>
+			{/if}
+		</div>
+	{/if}
+
 	{#if reactionEntries.length > 0}
 		<div class="compact-reactions-row">
 			<span class="compact-timestamp"></span>
@@ -409,6 +484,32 @@
 							{/each}
 						</div>
 					{/if}
+					{#if linkPreview || previewLoading}
+						{#if previewLoading}
+							<div class="link-preview-card link-preview-skeleton">
+								<div class="skeleton-line skeleton-site-name"></div>
+								<div class="skeleton-line skeleton-title"></div>
+								<div class="skeleton-line skeleton-desc"></div>
+							</div>
+						{:else if linkPreview}
+							<a class="link-preview-card" href={linkPreview.url} target="_blank" rel="noopener noreferrer">
+								<div class="link-preview-text">
+									{#if linkPreview.siteName}
+										<span class="link-preview-site">{linkPreview.siteName}</span>
+									{/if}
+									{#if linkPreview.title}
+										<span class="link-preview-title">{linkPreview.title}</span>
+									{/if}
+									{#if linkPreview.description}
+										<span class="link-preview-desc">{linkPreview.description}</span>
+									{/if}
+								</div>
+								{#if linkPreview.image}
+									<img class="link-preview-thumb" src={linkPreview.image} alt="" loading="lazy" />
+								{/if}
+							</a>
+						{/if}
+					{/if}
 				{/if}
 			</div>
 		</div>
@@ -445,6 +546,32 @@
 							{/if}
 						{/each}
 					</div>
+				{/if}
+				{#if linkPreview || previewLoading}
+					{#if previewLoading}
+						<div class="link-preview-card link-preview-skeleton">
+							<div class="skeleton-line skeleton-site-name"></div>
+							<div class="skeleton-line skeleton-title"></div>
+							<div class="skeleton-line skeleton-desc"></div>
+						</div>
+					{:else if linkPreview}
+						<a class="link-preview-card" href={linkPreview.url} target="_blank" rel="noopener noreferrer">
+							<div class="link-preview-text">
+								{#if linkPreview.siteName}
+									<span class="link-preview-site">{linkPreview.siteName}</span>
+								{/if}
+								{#if linkPreview.title}
+									<span class="link-preview-title">{linkPreview.title}</span>
+								{/if}
+								{#if linkPreview.description}
+									<span class="link-preview-desc">{linkPreview.description}</span>
+								{/if}
+							</div>
+							{#if linkPreview.image}
+								<img class="link-preview-thumb" src={linkPreview.image} alt="" loading="lazy" />
+							{/if}
+						</a>
+					{/if}
 				{/if}
 			{/if}
 		</div>
@@ -1032,5 +1159,102 @@
 		object-fit: contain;
 		vertical-align: middle;
 		margin: -0.2em 0.05em;
+	}
+
+	/* Link Preview Card */
+	.link-preview-card {
+		display: flex;
+		gap: 12px;
+		max-width: 400px;
+		margin-top: 6px;
+		padding: 10px 12px;
+		border: 1px solid var(--surface-highest);
+		border-left: 3px solid var(--accent-primary);
+		border-radius: 4px;
+		background: var(--surface-high);
+		color: inherit;
+		text-decoration: none;
+		overflow: hidden;
+		transition: background var(--duration-message) ease;
+	}
+
+	a.link-preview-card:hover {
+		background: var(--surface-highest);
+	}
+
+	.link-preview-text {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		min-width: 0;
+		flex: 1;
+	}
+
+	.link-preview-site {
+		font-size: var(--font-xs);
+		color: var(--text-muted);
+		text-transform: uppercase;
+		letter-spacing: 0.03em;
+	}
+
+	.link-preview-title {
+		font-size: var(--font-sm);
+		font-weight: var(--weight-semibold);
+		color: var(--text-link);
+		display: -webkit-box;
+		-webkit-line-clamp: 2;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
+	}
+
+	.link-preview-desc {
+		font-size: var(--font-xs);
+		color: var(--text-secondary);
+		display: -webkit-box;
+		-webkit-line-clamp: 2;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
+		line-height: 1.4;
+	}
+
+	.link-preview-thumb {
+		flex-shrink: 0;
+		width: 60px;
+		height: 60px;
+		object-fit: cover;
+		border-radius: 4px;
+		background: var(--surface-lowest);
+	}
+
+	/* Link preview skeleton loading state */
+	.link-preview-skeleton {
+		flex-direction: column;
+	}
+
+	.link-preview-skeleton .skeleton-line {
+		height: 10px;
+		border-radius: 4px;
+		background: var(--surface-highest);
+		animation: link-preview-pulse 1.5s ease-in-out infinite;
+	}
+
+	.link-preview-skeleton .skeleton-site-name {
+		width: 60px;
+		height: 8px;
+		margin-bottom: 2px;
+	}
+
+	.link-preview-skeleton .skeleton-title {
+		width: 75%;
+		height: 12px;
+	}
+
+	.link-preview-skeleton .skeleton-desc {
+		width: 90%;
+	}
+
+	@keyframes link-preview-pulse {
+		0%, 100% { opacity: 0.4; }
+		50% { opacity: 0.8; }
 	}
 </style>

@@ -1,3 +1,6 @@
+import { appSettings } from '$lib/state/appSettings.svelte';
+import { pushRawLine } from '$lib/state/rawIrcLog.svelte';
+
 export type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
 
 type EventName = 'message' | 'close' | 'error' | 'reconnecting' | 'reconnected';
@@ -101,6 +104,9 @@ export class IRCConnection {
 	send(line: string): void {
 		if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
 			return;
+		}
+		if (appSettings.showRawIrc) {
+			pushRawLine('out', line);
 		}
 		this.ws.send(line + '\r\n');
 	}

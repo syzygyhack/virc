@@ -62,4 +62,50 @@ describe('appSettings', () => {
 			expect(stored.zoom).toBe(100);
 		});
 	});
+
+	describe('showRawIrc', () => {
+		it('defaults to false', () => {
+			expect(appSettings.showRawIrc).toBe(false);
+		});
+
+		it('can be toggled on', () => {
+			appSettings.showRawIrc = true;
+			expect(appSettings.showRawIrc).toBe(true);
+		});
+
+		it('persists to localStorage', () => {
+			appSettings.showRawIrc = true;
+			const stored = JSON.parse(localStorage.getItem('virc:appSettings')!);
+			expect(stored.showRawIrc).toBe(true);
+		});
+
+		it('resets to default', () => {
+			appSettings.showRawIrc = true;
+			resetAppSettings();
+			expect(appSettings.showRawIrc).toBe(false);
+		});
+	});
+
+	describe('developerMode', () => {
+		it('defaults to false', () => {
+			expect(appSettings.developerMode).toBe(false);
+		});
+
+		it('can be toggled on', () => {
+			appSettings.developerMode = true;
+			expect(appSettings.developerMode).toBe(true);
+		});
+
+		it('persists to localStorage', () => {
+			appSettings.developerMode = true;
+			const stored = JSON.parse(localStorage.getItem('virc:appSettings')!);
+			expect(stored.developerMode).toBe(true);
+		});
+
+		it('resets to default', () => {
+			appSettings.developerMode = true;
+			resetAppSettings();
+			expect(appSettings.developerMode).toBe(false);
+		});
+	});
 });

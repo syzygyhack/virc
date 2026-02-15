@@ -7,6 +7,8 @@
 
 import type { IRCConnection } from './connection';
 import { parseMessage, type ParsedMessage } from './parser';
+import { appSettings } from '$lib/state/appSettings.svelte';
+import { pushRawLine } from '$lib/state/rawIrcLog.svelte';
 import {
 	addMessage,
 	clearChannel as clearMessages,
@@ -814,6 +816,9 @@ export function registerHandler(conn: IRCConnection): void {
 	}
 
 	activeHandler = (line: string) => {
+		if (appSettings.showRawIrc) {
+			pushRawLine('in', line);
+		}
 		const parsed = parseMessage(line);
 		if (parsed.command) {
 			handleMessage(parsed);

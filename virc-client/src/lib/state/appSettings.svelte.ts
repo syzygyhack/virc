@@ -15,11 +15,15 @@ export type SystemMessageDisplay = 'all' | 'smart' | 'none';
 interface AppSettingsData {
 	zoom: ZoomLevel;
 	systemMessageDisplay: SystemMessageDisplay;
+	showRawIrc: boolean;
+	developerMode: boolean;
 }
 
 const defaults: AppSettingsData = {
 	zoom: 125,
 	systemMessageDisplay: 'all',
+	showRawIrc: false,
+	developerMode: false,
 };
 
 function load(): AppSettingsData {
@@ -51,11 +55,17 @@ export const appSettings = {
 	set zoom(v: ZoomLevel) { _state.zoom = v; persist(); },
 	get systemMessageDisplay() { return _state.systemMessageDisplay; },
 	set systemMessageDisplay(v: SystemMessageDisplay) { _state.systemMessageDisplay = v; persist(); },
+	get showRawIrc() { return _state.showRawIrc; },
+	set showRawIrc(v: boolean) { _state.showRawIrc = v; persist(); },
+	get developerMode() { return _state.developerMode; },
+	set developerMode(v: boolean) { _state.developerMode = v; persist(); },
 };
 
 /** Reset settings to defaults (for testing). */
 export function resetAppSettings(): void {
 	_state.zoom = defaults.zoom;
 	_state.systemMessageDisplay = defaults.systemMessageDisplay;
+	_state.showRawIrc = defaults.showRawIrc;
+	_state.developerMode = defaults.developerMode;
 	persist();
 }

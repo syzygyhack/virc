@@ -16,7 +16,7 @@
 
 	let { onclose, connection = null }: Props = $props();
 
-	let activeTab: 'account' | 'voice' | 'appearance' | 'about' = $state('account');
+	let activeTab: 'account' | 'voice' | 'appearance' | 'advanced' | 'about' = $state('account');
 
 	// Display name editing
 	let editingNick = $state(false);
@@ -37,6 +37,7 @@
 		activeTab === 'account' ? 'My Account' :
 		activeTab === 'voice' ? 'Voice & Video' :
 		activeTab === 'appearance' ? 'Appearance' :
+		activeTab === 'advanced' ? 'Advanced' :
 		'About'
 	);
 
@@ -369,6 +370,9 @@
 				<button class="nav-item disabled" disabled>
 					Keybinds
 				</button>
+				<button class="nav-item" class:active={activeTab === 'advanced'} onclick={() => activeTab = 'advanced'}>
+					Advanced
+				</button>
 			</div>
 			<div class="nav-divider"></div>
 			<div class="nav-section">
@@ -626,7 +630,31 @@
 							{/each}
 						</div>
 					</div>
-				{:else if activeTab === 'about'}
+				{:else if activeTab === 'advanced'}
+				<div class="settings-section">
+					<h3 class="section-title">Debug</h3>
+					<label class="toggle-row">
+						<input type="checkbox" class="toggle-checkbox" bind:checked={appSettings.showRawIrc} />
+						<div class="toggle-info">
+							<span class="toggle-label">Show Raw IRC Messages</span>
+							<span class="toggle-hint">Display a debug panel showing raw IRC protocol lines as they are sent and received.</span>
+						</div>
+					</label>
+				</div>
+
+				<div class="section-divider"></div>
+
+				<div class="settings-section">
+					<h3 class="section-title">Developer</h3>
+					<label class="toggle-row">
+						<input type="checkbox" class="toggle-checkbox" bind:checked={appSettings.developerMode} />
+						<div class="toggle-info">
+							<span class="toggle-label">Enable Developer Mode</span>
+							<span class="toggle-hint">Show message IDs in tooltips and other internal details.</span>
+						</div>
+					</label>
+				</div>
+			{:else if activeTab === 'about'}
 					<div class="about-section">
 						<div class="about-logo">virc</div>
 						<div class="about-version">Version 0.1.0</div>
@@ -1100,6 +1128,17 @@
 	.toggle-label {
 		font-size: var(--font-sm);
 		color: var(--text-secondary);
+	}
+
+	.toggle-info {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+
+	.toggle-hint {
+		font-size: var(--font-xs);
+		color: var(--text-muted);
 	}
 
 	.mic-test-hint {

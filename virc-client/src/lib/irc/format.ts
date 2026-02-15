@@ -262,11 +262,21 @@ export function linkify(text: string): string {
 		return text;
 	}
 
+	// The input is already HTML-escaped by renderIRC(), so matched URLs
+	// contain entities like &amp;. We must NOT double-escape them.
+	// The href needs entities decoded back for a valid URL, while the
+	// display text is kept as-is (already safe HTML).
 	return text.replace(
 		/(https?:\/\/[^\s<>"]+)/g,
 		(url) => {
-			const href = escapeHTML(url);
-			return `<a href="${href}" target="_blank" rel="noopener noreferrer">${escapeHTML(url)}</a>`;
+			// Decode HTML entities back to raw URL for the href attribute
+			const href = url
+				.replace(/&amp;/g, '&')
+				.replace(/&lt;/g, '<')
+				.replace(/&gt;/g, '>')
+				.replace(/&quot;/g, '"')
+				.replace(/&#39;/g, "'");
+			return `<a href="${escapeHTML(href)}" target="_blank" rel="noopener noreferrer">${url}</a>`;
 		}
 	);
 }

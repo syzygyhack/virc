@@ -42,7 +42,18 @@ export function getCredentials(): StoredCredentials | null {
 	if (typeof localStorage === 'undefined') return null;
 	const raw = localStorage.getItem(CREDENTIALS_KEY);
 	if (!raw) return null;
-	return JSON.parse(raw) as StoredCredentials;
+	try {
+		const parsed = JSON.parse(raw) as StoredCredentials;
+		if (typeof parsed.account !== 'string' || typeof parsed.password !== 'string') {
+			localStorage.removeItem(CREDENTIALS_KEY);
+			return null;
+		}
+		return parsed;
+	} catch {
+		// Corrupted localStorage entry — clear it
+		localStorage.removeItem(CREDENTIALS_KEY);
+		return null;
+	}
 }
 
 /** Clear credentials (logout). */

@@ -256,4 +256,22 @@ describe("DELETE /api/invite/:token", () => {
     const res = await deleteInvite("nonexistent12");
     expect(res.status).toBe(404);
   });
+
+  test("returns 403 when non-creator tries to delete", async () => {
+    // Create invite as "admin"
+    const adminJwt = await createTestJwt("admin");
+    const createRes = await createInvite({ channel: "#general" }, { token: adminJwt });
+    const { token } = (await createRes.json()) as { token: string };
+
+    // Try to delete as "other-user" — should be forbidden
+    const otherJwt = await createTestJwt("other-user");
+    const delRes = await deleteInvite(token, { jwt: otherJwt });
+    expect(delRes.status).toBe(403);
+    const body = (await delRes.json()) as { error: string };
+    expect(body.error).toContain("Forbidden");
+
+    // Invite should still exist
+    const getRes = await getInvite(token);
+    expect(getRes.status).toBe(200);
+  });
 });

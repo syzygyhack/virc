@@ -127,13 +127,14 @@ export function createInviteRouter(dataDir?: string) {
   const store = new InviteStore(dir);
   const router = new Hono<AppEnv>();
 
-  // Ensure store is loaded before handling requests
-  let loaded = false;
+  // Ensure store is loaded before handling requests.
+  // Uses a shared promise to prevent concurrent loads from racing.
+  let loadPromise: Promise<void> | null = null;
   async function ensureLoaded() {
-    if (!loaded) {
-      await store.load();
-      loaded = true;
+    if (!loadPromise) {
+      loadPromise = store.load();
     }
+    await loadPromise;
   }
 
   // POST /api/invite — create invite (auth required)

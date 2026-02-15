@@ -2,6 +2,8 @@ import { Hono } from "hono";
 import { SignJWT } from "jose";
 import { env } from "../env.js";
 
+const ERGO_TIMEOUT_MS = 10_000;
+
 const auth = new Hono();
 
 auth.post("/api/auth", async (c) => {
@@ -14,7 +16,13 @@ auth.post("/api/auth", async (c) => {
     }
   }
 
-  const body = await c.req.json<{ account?: string; password?: string }>();
+  let body: { account?: string; password?: string };
+  try {
+    body = await c.req.json<{ account?: string; password?: string }>();
+  } catch {
+    return c.json({ error: "Invalid JSON body" }, 400);
+  }
+
   const { account, password } = body;
 
   if (!account || !password) {
@@ -33,6 +41,7 @@ auth.post("/api/auth", async (c) => {
     ergoRes = await fetch(ergoUrl, {
       method: "POST",
       headers,
+      signal: AbortSignal.timeout(ERGO_TIMEOUT_MS),
       body: JSON.stringify({
         accountName: account,
         passphrase: password,
@@ -46,7 +55,13 @@ auth.post("/api/auth", async (c) => {
     return c.json({ error: "Invalid credentials" }, 401);
   }
 
-  const ergoBody = (await ergoRes.json()) as { success?: boolean };
+  let ergoBody: { success?: boolean };
+  try {
+    ergoBody = (await ergoRes.json()) as { success?: boolean };
+  } catch {
+    return c.json({ error: "Auth service returned invalid response" }, 503);
+  }
+
   if (!ergoBody.success) {
     return c.json({ error: "Invalid credentials" }, 401);
   }
@@ -59,7 +74,7 @@ auth.post("/api/auth", async (c) => {
     iss: "virc-files",
     iat: now,
     exp: now + 3600, // 1 hour
-    srv: "virc.local",
+    srv: env.SERVER_NAME || "virc.local",
   })
     .setProtectedHeader({ alg: "HS256" })
     .sign(secret);

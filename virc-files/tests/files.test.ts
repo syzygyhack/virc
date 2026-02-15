@@ -163,4 +163,58 @@ describe("GET /api/files/:filename", () => {
     const res = await files.fetch(req("/api/files/..%2F..%2Fetc%2Fpasswd"));
     expect(res.status).toBe(400);
   });
+
+  test("serves SVG files with Content-Disposition: attachment", async () => {
+    const token = await createTestJwt("alice");
+    const svgContent = '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>';
+
+    const uploadRes = await files.fetch(
+      uploadReq("malicious.svg", svgContent, {
+        token,
+        mimetype: "image/svg+xml",
+      }),
+    );
+    expect(uploadRes.status).toBe(200);
+    const uploadBody = (await uploadRes.json()) as { url: string };
+
+    const serveRes = await files.fetch(req(uploadBody.url));
+    expect(serveRes.status).toBe(200);
+    expect(serveRes.headers.get("Content-Disposition")).toContain("attachment");
+    expect(serveRes.headers.get("X-Content-Type-Options")).toBe("nosniff");
+  });
+
+  test("serves HTML files with Content-Disposition: attachment", async () => {
+    const token = await createTestJwt("alice");
+    const htmlContent = '<html><script>alert(1)</script></html>';
+
+    const uploadRes = await files.fetch(
+      uploadReq("page.html", htmlContent, {
+        token,
+        mimetype: "text/html",
+      }),
+    );
+    expect(uploadRes.status).toBe(200);
+    const uploadBody = (await uploadRes.json()) as { url: string };
+
+    const serveRes = await files.fetch(req(uploadBody.url));
+    expect(serveRes.status).toBe(200);
+    expect(serveRes.headers.get("Content-Disposition")).toContain("attachment");
+  });
+
+  test("serves safe files without Content-Disposition: attachment", async () => {
+    const token = await createTestJwt("alice");
+
+    const uploadRes = await files.fetch(
+      uploadReq("photo.png", "fake-png", {
+        token,
+        mimetype: "image/png",
+      }),
+    );
+    expect(uploadRes.status).toBe(200);
+    const uploadBody = (await uploadRes.json()) as { url: string };
+
+    const serveRes = await files.fetch(req(uploadBody.url));
+    expect(serveRes.status).toBe(200);
+    expect(serveRes.headers.get("Content-Disposition")).toBeNull();
+  });
 });

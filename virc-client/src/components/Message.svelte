@@ -101,14 +101,21 @@
 			return;
 		}
 
+		// Track staleness: if previewUrl changes before fetch completes,
+		// discard the result to avoid showing data for a different URL.
+		let stale = false;
 		previewLoading = true;
 		fetchPreview(url, token, filesUrl).then((result) => {
+			if (stale) return;
 			linkPreview = result;
 			previewLoading = false;
 		}).catch(() => {
+			if (stale) return;
 			linkPreview = null;
 			previewLoading = false;
 		});
+
+		return () => { stale = true; };
 	});
 
 	let lightboxUrl = $state<string | null>(null);

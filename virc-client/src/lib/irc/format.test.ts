@@ -119,9 +119,14 @@ describe('linkify', () => {
 		expect(result).toContain('<a href="https://example.com"');
 	});
 
-	it('handles URLs with paths and query strings', () => {
-		const result = linkify('see https://example.com/path?q=1&r=2');
+	it('handles URLs with paths and query strings (pre-escaped input)', () => {
+		// linkify receives HTML-escaped input from renderIRC()
+		const result = linkify('see https://example.com/path?q=1&amp;r=2');
+		// href should have properly escaped & for the attribute
 		expect(result).toContain('href="https://example.com/path?q=1&amp;r=2"');
+		// Display text preserves the pre-escaped form (no double-escaping)
+		expect(result).toContain('>https://example.com/path?q=1&amp;r=2</a>');
+		expect(result).not.toContain('&amp;amp;');
 	});
 
 	it('does not linkify plain text', () => {
@@ -289,10 +294,11 @@ describe('renderMessage XSS safety', () => {
 	});
 
 	it('escapes HTML entities in URLs used as display text', () => {
-		// Linkify should also escape the display portion of links
+		// renderIRC escapes &, then linkify should not double-escape
 		const result = renderMessage('visit https://example.com/test&param=1', 'me');
-		expect(result).toContain('href=');
-		// The display text should be escaped too
-		expect(result).not.toMatch(/<a[^>]*>[^<]*&[^a]/);
+		expect(result).toContain('href="https://example.com/test&amp;param=1"');
+		// Display text has single-escaped &amp; (not double &amp;amp;)
+		expect(result).toContain('>https://example.com/test&amp;param=1</a>');
+		expect(result).not.toContain('&amp;amp;');
 	});
 });

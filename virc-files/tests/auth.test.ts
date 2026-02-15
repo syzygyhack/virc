@@ -217,4 +217,39 @@ describe("POST /api/auth", () => {
       else process.env.ERGO_API_TOKEN = prev;
     }
   });
+
+  test("returns 400 for invalid JSON body", async () => {
+    const res = await auth.fetch(req("/api/auth", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "not valid json{{{",
+    }));
+    expect(res.status).toBe(400);
+    const body = await res.json() as { error: string };
+    expect(body.error).toContain("Invalid JSON");
+  });
+
+  test("JWT srv claim uses SERVER_NAME env var when set", async () => {
+    const prev = process.env.SERVER_NAME;
+    process.env.SERVER_NAME = "chat.example.com";
+    globalThis.fetch = mock(async () =>
+      new Response(JSON.stringify({ success: true }), { status: 200 }),
+    ) as typeof fetch;
+
+    try {
+      const res = await auth.fetch(req("/api/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ account: "alice", password: "correct" }),
+      }));
+      const { token } = await res.json() as { token: string };
+
+      const secret = new TextEncoder().encode(TEST_JWT_SECRET);
+      const { payload } = await jwtVerify(token, secret, { issuer: "virc-files" });
+      expect((payload as Record<string, unknown>).srv).toBe("chat.example.com");
+    } finally {
+      if (prev === undefined) delete process.env.SERVER_NAME;
+      else process.env.SERVER_NAME = prev;
+    }
+  });
 });

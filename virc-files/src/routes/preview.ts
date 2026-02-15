@@ -1,6 +1,10 @@
 import { Hono } from "hono";
+import { resolve as defaultDnsResolve } from "node:dns/promises";
 import { authMiddleware } from "../middleware/auth.js";
 import type { AppEnv } from "../types.js";
+
+/** DNS resolver function — replaceable for testing. */
+let dnsResolver: (hostname: string) => Promise<string[]> = defaultDnsResolve;
 
 const preview = new Hono<AppEnv>();
 
@@ -158,6 +162,40 @@ function validateUrl(raw: string): URL | null {
   return parsed;
 }
 
+/**
+ * Resolve a hostname via DNS and check that all resolved IPs are public.
+ * Blocks DNS rebinding attacks where a public hostname resolves to a private IP.
+ * Skips resolution for raw IP addresses (already checked by isPrivateHost).
+ */
+async function assertPublicResolution(hostname: string): Promise<void> {
+  // If hostname is already an IP literal, isPrivateHost already covered it
+  if (parseIPv4(hostname) || hostname === "::1" || hostname.startsWith("[")) {
+    return;
+  }
+
+  let addresses: string[];
+  try {
+    addresses = await dnsResolver(hostname);
+  } catch {
+    throw new Error(`DNS resolution failed for ${hostname}`);
+  }
+
+  for (const addr of addresses) {
+    const ipv4 = parseIPv4(addr);
+    if (ipv4 && isPrivateIPv4(...ipv4)) {
+      throw new Error(`Hostname ${hostname} resolves to private IP ${addr}`);
+    }
+    // IPv6 checks
+    if (addr === "::1") {
+      throw new Error(`Hostname ${hostname} resolves to loopback`);
+    }
+    const lower = addr.toLowerCase();
+    if (lower.startsWith("fe80:") || lower.startsWith("fc00:") || lower.startsWith("fd")) {
+      throw new Error(`Hostname ${hostname} resolves to private IPv6`);
+    }
+  }
+}
+
 /** Extract OG meta tags from HTML string. */
 function parseOgTags(html: string): Omit<OgMetadata, "url"> {
   const get = (property: string): string | null => {
@@ -178,11 +216,15 @@ function parseOgTags(html: string): Omit<OgMetadata, "url"> {
   };
 }
 
-/** Fetch URL with timeout, redirect limit, and size cap. */
+/** Fetch URL with timeout, redirect limit, size cap, and DNS rebinding protection. */
 async function fetchUrl(url: string): Promise<string> {
   let currentUrl = url;
 
   for (let i = 0; i <= MAX_REDIRECTS; i++) {
+    // DNS rebinding protection: resolve hostname and verify all IPs are public
+    const currentParsed = new URL(currentUrl);
+    await assertPublicResolution(currentParsed.hostname);
+
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
@@ -286,4 +328,14 @@ preview.get("/api/preview", authMiddleware, async (c) => {
   }
 });
 
-export { preview, cache, validateUrl, parseOgTags, isPrivateHost };
+/** Override the DNS resolver (for testing). */
+function setDnsResolver(resolver: (hostname: string) => Promise<string[]>): void {
+  dnsResolver = resolver;
+}
+
+/** Reset the DNS resolver to the default (for testing). */
+function resetDnsResolver(): void {
+  dnsResolver = defaultDnsResolve;
+}
+
+export { preview, cache, validateUrl, parseOgTags, isPrivateHost, assertPublicResolution, setDnsResolver, resetDnsResolver };

@@ -59,6 +59,25 @@ describe('credential helpers', () => {
 		expect(isAuthenticated()).toBe(false);
 		expect(getCredentials()).toBeNull();
 	});
+
+	it('returns null and clears storage for corrupted JSON', () => {
+		storage.setItem('virc:credentials', 'not valid json{{{');
+		expect(getCredentials()).toBeNull();
+		// Should have cleaned up the corrupted entry
+		expect(storage.getItem('virc:credentials')).toBeNull();
+	});
+
+	it('returns null and clears storage for invalid credential shape', () => {
+		storage.setItem('virc:credentials', JSON.stringify({ account: 123, password: null }));
+		expect(getCredentials()).toBeNull();
+		expect(storage.getItem('virc:credentials')).toBeNull();
+	});
+
+	it('returns null and clears storage for missing fields', () => {
+		storage.setItem('virc:credentials', JSON.stringify({ foo: 'bar' }));
+		expect(getCredentials()).toBeNull();
+		expect(storage.getItem('virc:credentials')).toBeNull();
+	});
 });
 
 describe('JWT management', () => {

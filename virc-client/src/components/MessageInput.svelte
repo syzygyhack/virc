@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { markdownToIRC } from '$lib/irc/format';
 	import type { IRCConnection } from '$lib/irc/connection';
-	import { privmsg, tagmsg, part, topic } from '$lib/irc/commands';
+	import { privmsg, tagmsg, part, topic, escapeTagValue } from '$lib/irc/commands';
 	import { formatMessage } from '$lib/irc/parser';
 	import SlashCommandMenu from './SlashCommandMenu.svelte';
 	import { filterCommands, type CommandDef } from './SlashCommandMenu.svelte';
@@ -522,7 +522,7 @@
 			});
 
 			if (reply) {
-				const tags = `@+draft/reply=${reply.msgid}`;
+				const tags = `@+draft/reply=${escapeTagValue(reply.msgid)}`;
 				connection.send(`${tags} PRIVMSG ${target} :${ircText}`);
 			} else {
 				privmsg(connection, target, ircText);

@@ -3,7 +3,7 @@ import { setupEnv, createTestJwt, req } from "./helpers.js";
 
 setupEnv();
 
-import { preview, cache, validateUrl, parseOgTags, isPrivateHost } from "../src/routes/preview.js";
+import { preview, cache, validateUrl, parseOgTags, isPrivateHost, assertPublicResolution, setDnsResolver, resetDnsResolver } from "../src/routes/preview.js";
 
 const OG_HTML = `<!doctype html>
 <html>
@@ -103,6 +103,86 @@ describe("isPrivateHost", () => {
     expect(isPrivateHost("::1")).toBe(true);
     expect(isPrivateHost("[::1]")).toBe(true);
   });
+
+  test("rejects octal IP 0177.0.0.1 (127.0.0.1)", () => {
+    expect(isPrivateHost("0177.0.0.1")).toBe(true);
+  });
+
+  test("rejects hex IP 0x7f000001 (127.0.0.1)", () => {
+    expect(isPrivateHost("0x7f000001")).toBe(true);
+  });
+
+  test("rejects decimal integer 2130706433 (127.0.0.1)", () => {
+    expect(isPrivateHost("2130706433")).toBe(true);
+  });
+
+  test("rejects IPv6-mapped IPv4 ::ffff:127.0.0.1", () => {
+    expect(isPrivateHost("::ffff:127.0.0.1")).toBe(true);
+  });
+
+  test("rejects IPv6-mapped hex ::ffff:7f00:1", () => {
+    expect(isPrivateHost("::ffff:7f00:1")).toBe(true);
+  });
+
+  test("rejects IPv6 link-local fe80::", () => {
+    expect(isPrivateHost("fe80::1")).toBe(true);
+  });
+
+  test("rejects IPv6 unique-local fd00::", () => {
+    expect(isPrivateHost("fd12::1")).toBe(true);
+  });
+});
+
+describe("assertPublicResolution", () => {
+  test("rejects hostname resolving to private IP", async () => {
+    setDnsResolver(async () => ["127.0.0.1"]);
+    try {
+      await expect(assertPublicResolution("evil.example.com")).rejects.toThrow("private IP");
+    } finally {
+      resetDnsResolver();
+    }
+  });
+
+  test("rejects hostname resolving to 10.x.x.x", async () => {
+    setDnsResolver(async () => ["10.0.0.1"]);
+    try {
+      await expect(assertPublicResolution("evil.example.com")).rejects.toThrow("private IP");
+    } finally {
+      resetDnsResolver();
+    }
+  });
+
+  test("rejects hostname resolving to 192.168.x.x", async () => {
+    setDnsResolver(async () => ["192.168.1.100"]);
+    try {
+      await expect(assertPublicResolution("evil.example.com")).rejects.toThrow("private IP");
+    } finally {
+      resetDnsResolver();
+    }
+  });
+
+  test("allows hostname resolving to public IP", async () => {
+    setDnsResolver(async () => ["93.184.216.34"]);
+    try {
+      await expect(assertPublicResolution("example.com")).resolves.toBeUndefined();
+    } finally {
+      resetDnsResolver();
+    }
+  });
+
+  test("skips DNS for raw IPv4 addresses", async () => {
+    // Raw IP should not trigger DNS resolution — already checked by isPrivateHost
+    await expect(assertPublicResolution("8.8.8.8")).resolves.toBeUndefined();
+  });
+
+  test("rejects when DNS resolution fails", async () => {
+    setDnsResolver(async () => { throw new Error("NXDOMAIN"); });
+    try {
+      await expect(assertPublicResolution("nonexistent.invalid")).rejects.toThrow("DNS resolution failed");
+    } finally {
+      resetDnsResolver();
+    }
+  });
 });
 
 describe("parseOgTags", () => {
@@ -186,6 +266,7 @@ describe("GET /api/preview", () => {
 
   test("returns OG metadata on success", async () => {
     const originalFetch = globalThis.fetch;
+    setDnsResolver(async () => ["93.184.216.34"]);
     globalThis.fetch = mock(async () =>
       new Response(OG_HTML, {
         status: 200,
@@ -213,12 +294,14 @@ describe("GET /api/preview", () => {
       expect(body.url).toBe("https://example.com/page");
     } finally {
       globalThis.fetch = originalFetch;
+      resetDnsResolver();
     }
   });
 
   test("caches results and returns cached data", async () => {
     let fetchCount = 0;
     const originalFetch = globalThis.fetch;
+    setDnsResolver(async () => ["93.184.216.34"]);
     globalThis.fetch = mock(async () => {
       fetchCount++;
       return new Response(OG_HTML, {
@@ -243,11 +326,13 @@ describe("GET /api/preview", () => {
       expect(fetchCount).toBe(1); // No additional fetch
     } finally {
       globalThis.fetch = originalFetch;
+      resetDnsResolver();
     }
   });
 
   test("returns 502 when upstream fetch fails", async () => {
     const originalFetch = globalThis.fetch;
+    setDnsResolver(async () => ["93.184.216.34"]);
     globalThis.fetch = mock(async () => {
       throw new Error("Network error");
     });
@@ -261,11 +346,13 @@ describe("GET /api/preview", () => {
       expect(body.error).toContain("fetch");
     } finally {
       globalThis.fetch = originalFetch;
+      resetDnsResolver();
     }
   });
 
   test("returns 502 for non-HTML response", async () => {
     const originalFetch = globalThis.fetch;
+    setDnsResolver(async () => ["93.184.216.34"]);
     globalThis.fetch = mock(async () =>
       new Response('{"data": true}', {
         status: 200,
@@ -280,6 +367,28 @@ describe("GET /api/preview", () => {
       expect(res.status).toBe(502);
     } finally {
       globalThis.fetch = originalFetch;
+      resetDnsResolver();
+    }
+  });
+
+  test("returns 502 when hostname resolves to private IP (DNS rebinding)", async () => {
+    const originalFetch = globalThis.fetch;
+    setDnsResolver(async () => ["127.0.0.1"]);
+    globalThis.fetch = mock(async () =>
+      new Response(OG_HTML, {
+        status: 200,
+        headers: { "Content-Type": "text/html" },
+      }),
+    );
+
+    try {
+      const token = await createTestJwt("alice");
+      const r = await previewReq("https://rebind.example.com/page", { token });
+      const res = await preview.fetch(r);
+      expect(res.status).toBe(502);
+    } finally {
+      globalThis.fetch = originalFetch;
+      resetDnsResolver();
     }
   });
 });

@@ -5,7 +5,7 @@ import { formatMessage } from './parser';
  * Escape a tag value per IRCv3 message-tags spec.
  * Characters that must be escaped: \ ; SPACE CR LF
  */
-function escapeTagValue(value: string): string {
+export function escapeTagValue(value: string): string {
 	return value
 		.replace(/\\/g, '\\\\')
 		.replace(/;/g, '\\:')

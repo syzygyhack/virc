@@ -12,6 +12,8 @@ import {
 	clearChannel,
 	resetMessages,
 	updateSendState,
+	updateMessageText,
+	resolveEditChain,
 	type Message,
 } from './messages.svelte';
 
@@ -297,6 +299,73 @@ describe('message state', () => {
 		it('does nothing for unknown channel', () => {
 			updateSendState('#nope', 'send-1', 'failed');
 			// No error thrown
+		});
+	});
+
+	describe('updateMessageText', () => {
+		it('updates the text of an existing message in-place', () => {
+			addMessage('#test', makeMessage({ msgid: 'ORIG1', text: 'Hello wrold' }));
+			const updated = updateMessageText('#test', 'ORIG1', 'Hello world', 'EDIT1');
+			expect(updated).toBe(true);
+			const msg = getMessage('#test', 'ORIG1');
+			expect(msg).not.toBeNull();
+			expect(msg!.text).toBe('Hello world');
+		});
+
+		it('marks the message as edited', () => {
+			addMessage('#test', makeMessage({ msgid: 'ORIG2', text: 'typo' }));
+			updateMessageText('#test', 'ORIG2', 'fixed', 'EDIT2');
+			const msg = getMessage('#test', 'ORIG2');
+			expect(msg!.isEdited).toBe(true);
+		});
+
+		it('returns false for unknown msgid', () => {
+			const result = updateMessageText('#test', 'nonexistent', 'text', 'EDIT3');
+			expect(result).toBe(false);
+		});
+
+		it('returns false for unknown channel', () => {
+			const result = updateMessageText('#nope', 'ORIG1', 'text', 'EDIT3');
+			expect(result).toBe(false);
+		});
+
+		it('preserves message position in the buffer', () => {
+			addMessage('#test', makeMessage({ msgid: 'a', text: 'first' }));
+			addMessage('#test', makeMessage({ msgid: 'b', text: 'second' }));
+			addMessage('#test', makeMessage({ msgid: 'c', text: 'third' }));
+			updateMessageText('#test', 'b', 'edited second', 'EDIT_B');
+			const msgs = getMessages('#test');
+			expect(msgs[1].msgid).toBe('b');
+			expect(msgs[1].text).toBe('edited second');
+		});
+	});
+
+	describe('resolveEditChain', () => {
+		it('stores edit mapping and resolves original->new msgid', () => {
+			addMessage('#test', makeMessage({ msgid: 'ORIG1', text: 'original' }));
+			updateMessageText('#test', 'ORIG1', 'edited', 'EDIT1');
+			expect(resolveEditChain('ORIG1')).toBe('EDIT1');
+		});
+
+		it('follows multi-step edit chains', () => {
+			addMessage('#test', makeMessage({ msgid: 'ORIG1', text: 'v1' }));
+			updateMessageText('#test', 'ORIG1', 'v2', 'EDIT1');
+			updateMessageText('#test', 'ORIG1', 'v3', 'EDIT2');
+			// The chain should resolve ORIG1 to the latest edit msgid
+			expect(resolveEditChain('ORIG1')).toBe('EDIT2');
+		});
+
+		it('returns the same msgid if no edit chain exists', () => {
+			expect(resolveEditChain('NOMATCH')).toBe('NOMATCH');
+		});
+
+		it('allows getMessage to find by original msgid after edit', () => {
+			addMessage('#test', makeMessage({ msgid: 'ORIG1', text: 'original' }));
+			updateMessageText('#test', 'ORIG1', 'edited', 'EDIT1');
+			// getMessage should still find by original msgid
+			const msg = getMessage('#test', 'ORIG1');
+			expect(msg).not.toBeNull();
+			expect(msg!.text).toBe('edited');
 		});
 	});
 });

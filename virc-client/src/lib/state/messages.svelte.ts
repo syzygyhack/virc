@@ -26,6 +26,7 @@ export interface Message {
 	replyTo?: string; // msgid of parent
 	reactions: Map<string, Set<string>>; // emoji -> set of accounts
 	isRedacted: boolean;
+	isEdited?: boolean; // true when message has been updated via +virc/edit
 	type: MessageType;
 	sendState?: SendState; // only set for locally-sent messages
 }
@@ -38,6 +39,13 @@ interface ChannelCursors {
 // --- Internal (non-reactive) storage ---
 const channelMessages = new Map<string, Message[]>();
 const channelCursors = new Map<string, ChannelCursors>();
+
+/**
+ * Edit chain map: original msgid -> latest edit msgid.
+ * Used so reactions/replies referencing the original msgid still resolve
+ * to the correct (edited) message.
+ */
+const editMap = new Map<string, string>();
 
 // --- Reactive version counter — bump this on every mutation ---
 let _version = $state(0);
@@ -140,6 +148,30 @@ export function redactMessage(target: string, msgid: string): void {
 		msg.isRedacted = true;
 		notify();
 	}
+}
+
+/**
+ * Update a message's text in-place (for +virc/edit).
+ * Stores the edit chain mapping so reactions/replies to the original msgid still resolve.
+ * Returns true if the original message was found and updated.
+ */
+export function updateMessageText(target: string, originalMsgid: string, newText: string, newMsgid: string): boolean {
+	const msg = getMessage(target, originalMsgid);
+	if (!msg) return false;
+
+	msg.text = newText;
+	msg.isEdited = true;
+	editMap.set(originalMsgid, newMsgid);
+	notify();
+	return true;
+}
+
+/**
+ * Resolve an edit chain: given a msgid, return the latest edit msgid.
+ * If the msgid has no edit chain, returns the input msgid unchanged.
+ */
+export function resolveEditChain(msgid: string): string {
+	return editMap.get(msgid) ?? msgid;
 }
 
 /** Add a reaction to a message. */
@@ -250,6 +282,7 @@ export function notifyHistoryBatchComplete(target?: string): void {
 export function resetMessages(): void {
 	channelMessages.clear();
 	channelCursors.clear();
+	editMap.clear();
 	notify();
 }
 

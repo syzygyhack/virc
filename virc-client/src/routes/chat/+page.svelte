@@ -1257,6 +1257,7 @@
 				oncancelreply={handleCancelReply}
 				oneditlast={editLastMessage}
 				editing={editingMsgid !== null}
+				editMsgid={editingMsgid}
 				oneditcomplete={handleEditComplete}
 				oneditcancel={handleEditCancel}
 				disconnected={isDisconnected}

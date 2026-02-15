@@ -19,6 +19,7 @@ import {
 	getMessages,
 	notifyHistoryBatchComplete,
 	replaceOptimisticMessage,
+	updateMessageText,
 	type Message,
 	type MessageType,
 } from '../state/messages.svelte';
@@ -302,6 +303,17 @@ function handlePrivmsg(parsed: ParsedMessage): void {
 	// Clear typing indicator for this user
 	if (msg.nick) {
 		clearTyping(bufferTarget, msg.nick);
+	}
+
+	// Handle +virc/edit: update original message in-place instead of adding new
+	const editOriginalMsgid = parsed.tags['+virc/edit'];
+	if (editOriginalMsgid) {
+		const updated = updateMessageText(bufferTarget, editOriginalMsgid, msg.text, msg.msgid);
+		if (updated) {
+			// Edit applied in-place — don't add a new message
+			return;
+		}
+		// Original not found in buffer — fall through to add as new message
 	}
 
 	// For own echo-messages, replace the optimistic placeholder instead of adding a duplicate

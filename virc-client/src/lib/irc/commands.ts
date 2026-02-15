@@ -15,9 +15,13 @@ export function part(conn: IRCConnection, channel: string, reason?: string): voi
 	}
 }
 
-/** Send a PRIVMSG to a target (channel or nick). */
-export function privmsg(conn: IRCConnection, target: string, text: string): void {
-	conn.send(formatMessage('PRIVMSG', target, text));
+/** Send a PRIVMSG to a target (channel or nick). Optionally attach a +virc/edit tag for edits. */
+export function privmsg(conn: IRCConnection, target: string, text: string, editMsgid?: string): void {
+	if (editMsgid) {
+		conn.send(`@+virc/edit=${editMsgid} ${formatMessage('PRIVMSG', target, text)}`);
+	} else {
+		conn.send(formatMessage('PRIVMSG', target, text));
+	}
 }
 
 /**

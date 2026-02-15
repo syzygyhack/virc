@@ -646,6 +646,65 @@ describe('MODE handling', () => {
 	});
 });
 
+describe('+virc/edit handling', () => {
+	it('updates original message text in-place when receiving +virc/edit', () => {
+		// Add original message
+		handle(
+			'@msgid=ORIG123;account=alice;time=2025-01-01T00:00:00Z :alice!a@host PRIVMSG #test :Hello wrold'
+		);
+		expect(getMessage('#test', 'ORIG123')!.text).toBe('Hello wrold');
+
+		// Edit arrives: new message with +virc/edit tag pointing to original
+		handle(
+			'@msgid=EDIT456;+virc/edit=ORIG123;account=alice;time=2025-01-01T00:01:00Z :alice!a@host PRIVMSG #test :Hello world'
+		);
+
+		// Original message should be updated in-place
+		const msg = getMessage('#test', 'ORIG123');
+		expect(msg).not.toBeNull();
+		expect(msg!.text).toBe('Hello world');
+		expect(msg!.isEdited).toBe(true);
+	});
+
+	it('does not add a new message for an edit', () => {
+		handle(
+			'@msgid=ORIG1;account=alice :alice!a@host PRIVMSG #test :original'
+		);
+		handle(
+			'@msgid=EDIT1;+virc/edit=ORIG1;account=alice :alice!a@host PRIVMSG #test :edited'
+		);
+
+		const msgs = getMessages('#test');
+		// Should still be 1 message, not 2
+		expect(msgs).toHaveLength(1);
+	});
+
+	it('adds as new message if original msgid not found', () => {
+		// Edit arrives but original message is not in buffer
+		handle(
+			'@msgid=EDIT1;+virc/edit=MISSING;account=alice :alice!a@host PRIVMSG #test :edited message'
+		);
+
+		const msgs = getMessages('#test');
+		// Should be added as a new message since original is missing
+		expect(msgs).toHaveLength(1);
+		expect(msgs[0].text).toBe('edited message');
+	});
+
+	it('stores edit chain mapping for reactions/replies', () => {
+		handle(
+			'@msgid=ORIG1;account=alice :alice!a@host PRIVMSG #test :v1'
+		);
+		handle(
+			'@msgid=EDIT1;+virc/edit=ORIG1;account=alice :alice!a@host PRIVMSG #test :v2'
+		);
+
+		// Reactions to the original msgid should still resolve
+		const msg = getMessage('#test', 'ORIG1');
+		expect(msg).not.toBeNull();
+	});
+});
+
 describe('MONITOR -> member presence', () => {
 	it('sets member presence to online on RPL_MONONLINE (730)', () => {
 		handle(':alice!a@host JOIN #test alice :Alice');

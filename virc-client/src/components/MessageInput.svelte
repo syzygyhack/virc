@@ -24,13 +24,14 @@
 		oncancelreply?: () => void;
 		oneditlast?: () => void;
 		editing?: boolean;
+		editMsgid?: string | null;
 		oneditcomplete?: () => void;
 		oneditcancel?: () => void;
 		disconnected?: boolean;
 		rateLimitSeconds?: number;
 	}
 
-	let { target, connection, reply = null, oncancelreply, oneditlast, editing = false, oneditcomplete, oneditcancel, disconnected = false, rateLimitSeconds = 0 }: Props = $props();
+	let { target, connection, reply = null, oncancelreply, oneditlast, editing = false, editMsgid = null, oneditcomplete, oneditcancel, disconnected = false, rateLimitSeconds = 0 }: Props = $props();
 
 	let text = $state('');
 	let textarea: HTMLTextAreaElement | undefined = $state();
@@ -338,33 +339,36 @@
 		// Convert markdown to mIRC codes
 		const ircText = markdownToIRC(messageText);
 
-		// Add optimistic message immediately so it appears without waiting for server echo
-		addMessage(target, {
-			msgid: generateLocalMsgid(),
-			nick: userState.nick ?? '',
-			account: userState.account ?? '',
-			target,
-			text: ircText,
-			time: new Date(),
-			tags: {},
-			replyTo: reply?.msgid,
-			reactions: new Map(),
-			isRedacted: false,
-			type: 'privmsg',
-			sendState: 'sending',
-		});
-
-		if (reply) {
-			// Send with reply tag
-			const tags = `@+draft/reply=${reply.msgid}`;
-			connection.send(`${tags} PRIVMSG ${target} :${ircText}`);
-		} else {
-			privmsg(connection, target, ircText);
-		}
-
-		// If we were editing, redact the original message now that the edit is sent
-		if (editing) {
+		if (editing && editMsgid) {
+			// Editing: REDACT the original first, then send PRIVMSG with +virc/edit tag.
+			// Skip optimistic message — the original stays in-place and is updated when
+			// the echo comes back with the +virc/edit tag via the handler.
 			oneditcomplete?.();
+			privmsg(connection, target, ircText, editMsgid);
+		} else {
+			// Add optimistic message immediately so it appears without waiting for server echo
+			addMessage(target, {
+				msgid: generateLocalMsgid(),
+				nick: userState.nick ?? '',
+				account: userState.account ?? '',
+				target,
+				text: ircText,
+				time: new Date(),
+				tags: {},
+				replyTo: reply?.msgid,
+				reactions: new Map(),
+				isRedacted: false,
+				type: 'privmsg',
+				sendState: 'sending',
+			});
+
+			if (reply) {
+				// Send with reply tag
+				const tags = `@+draft/reply=${reply.msgid}`;
+				connection.send(`${tags} PRIVMSG ${target} :${ircText}`);
+			} else {
+				privmsg(connection, target, ircText);
+			}
 		}
 
 		text = '';

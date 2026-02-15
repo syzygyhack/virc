@@ -48,6 +48,10 @@ export const env = {
   get UPLOAD_DIR() {
     return optional("UPLOAD_DIR", "./uploads");
   },
+  /** Directory for persistent data files (invites, etc.). */
+  get DATA_DIR() {
+    return optional("DATA_DIR", "./data");
+  },
   /** Maximum upload file size in bytes. Default: 25MB. */
   get MAX_FILE_SIZE() {
     return parseInt(optional("MAX_FILE_SIZE", String(25 * 1024 * 1024)), 10);

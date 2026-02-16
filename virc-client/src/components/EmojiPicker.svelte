@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onDestroy } from 'svelte';
 	import { categories, searchEmoji, searchCustomEmoji, getFrequentEmoji, recordEmojiUse, getCustomEmojiList, type EmojiEntry, type CustomEmoji } from '$lib/emoji';
 
 	interface Props {
@@ -11,6 +12,7 @@
 	let query = $state('');
 	let searchInput: HTMLInputElement | undefined = $state();
 	let pickerEl: HTMLDivElement | undefined = $state();
+	let emojiScrollEl: HTMLDivElement | undefined = $state();
 
 	let searchResults = $derived(query.trim() ? searchEmoji(query) : null);
 	let customSearchResults = $derived(query.trim() ? searchCustomEmoji(query) : null);
@@ -28,6 +30,56 @@
 			})
 			.filter((e): e is EmojiEntry => e !== null)
 	);
+
+	// ── Lazy category rendering ─────────────────────────────────────────
+	// Only render emoji grids for categories whose sentinel has entered the
+	// viewport (with a generous rootMargin for pre-loading). Once visible,
+	// a category stays rendered — no un-mounting on scroll-away.
+
+	/** Set of category names that have been visible.
+	 *  Pre-seed with top-of-scroll categories so they render immediately. */
+	let visibleCategories: Set<string> = $state(new Set(['Frequent', 'Server', 'Smileys']));
+
+	let observer: IntersectionObserver | undefined;
+
+	function setupObserver(scrollRoot: HTMLElement): void {
+		observer = new IntersectionObserver(
+			(entries) => {
+				let changed = false;
+				for (const entry of entries) {
+					if (entry.isIntersecting) {
+						const name = (entry.target as HTMLElement).dataset.category;
+						if (name && !visibleCategories.has(name)) {
+							visibleCategories.add(name);
+							changed = true;
+						}
+					}
+				}
+				if (changed) {
+					visibleCategories = new Set(visibleCategories);
+				}
+			},
+			{ root: scrollRoot, rootMargin: '200px 0px' }
+		);
+	}
+
+	/** Svelte action: register a category sentinel element with the observer. */
+	function observeCategory(el: HTMLElement): { destroy: () => void } {
+		observer?.observe(el);
+		return { destroy: () => observer?.unobserve(el) };
+	}
+
+	/** Initialize observer when scroll container mounts. */
+	$effect(() => {
+		if (emojiScrollEl) {
+			setupObserver(emojiScrollEl);
+		}
+		return () => observer?.disconnect();
+	});
+
+	onDestroy(() => {
+		observer?.disconnect();
+	});
 
 	$effect(() => {
 		searchInput?.focus();
@@ -84,7 +136,7 @@
 		/>
 	</div>
 
-	<div class="emoji-scroll">
+	<div class="emoji-scroll" bind:this={emojiScrollEl}>
 		{#if searchResults}
 			{#if customSearchResults && customSearchResults.length > 0}
 				<div class="emoji-category">
@@ -118,53 +170,65 @@
 			{/if}
 		{:else}
 			{#if frequentEntries.length > 0}
-				<div class="emoji-category">
+				<div class="emoji-category" data-category="Frequent" use:observeCategory>
 					<div class="emoji-category-header">Frequently Used</div>
-					<div class="emoji-grid">
-						{#each frequentEntries as entry (entry.emoji)}
-							<button
-								class="emoji-btn"
-								title={entry.name}
-								onclick={() => handleSelect(entry.emoji)}
-							>
-								{entry.emoji}
-							</button>
-						{/each}
-					</div>
+					{#if visibleCategories.has('Frequent')}
+						<div class="emoji-grid">
+							{#each frequentEntries as entry (entry.emoji)}
+								<button
+									class="emoji-btn"
+									title={entry.name}
+									onclick={() => handleSelect(entry.emoji)}
+								>
+									{entry.emoji}
+								</button>
+							{/each}
+						</div>
+					{:else}
+						<div class="emoji-grid-placeholder" style="height:{Math.ceil(frequentEntries.length / 8) * 40}px"></div>
+					{/if}
 				</div>
 			{/if}
 
 			{#if customEmoji.length > 0}
-				<div class="emoji-category">
+				<div class="emoji-category" data-category="Server" use:observeCategory>
 					<div class="emoji-category-header">Server</div>
-					<div class="emoji-grid">
-						{#each customEmoji as entry (entry.name)}
-							<button
-								class="emoji-btn emoji-btn-custom"
-								title={entry.name}
-								onclick={() => handleCustomSelect(entry.name)}
-							>
-								<img class="custom-emoji-img" src={entry.url} alt={entry.name} loading="lazy" />
-							</button>
-						{/each}
-					</div>
+					{#if visibleCategories.has('Server')}
+						<div class="emoji-grid">
+							{#each customEmoji as entry (entry.name)}
+								<button
+									class="emoji-btn emoji-btn-custom"
+									title={entry.name}
+									onclick={() => handleCustomSelect(entry.name)}
+								>
+									<img class="custom-emoji-img" src={entry.url} alt={entry.name} loading="lazy" />
+								</button>
+							{/each}
+						</div>
+					{:else}
+						<div class="emoji-grid-placeholder" style="height:{Math.ceil(customEmoji.length / 8) * 40}px"></div>
+					{/if}
 				</div>
 			{/if}
 
 			{#each categories as category (category.name)}
-				<div class="emoji-category">
+				<div class="emoji-category" data-category={category.name} use:observeCategory>
 					<div class="emoji-category-header">{category.name}</div>
-					<div class="emoji-grid">
-						{#each category.emoji as entry (entry.emoji)}
-							<button
-								class="emoji-btn"
-								title={entry.name}
-								onclick={() => handleSelect(entry.emoji)}
-							>
-								{entry.emoji}
-							</button>
-						{/each}
-					</div>
+					{#if visibleCategories.has(category.name)}
+						<div class="emoji-grid">
+							{#each category.emoji as entry (entry.emoji)}
+								<button
+									class="emoji-btn"
+									title={entry.name}
+									onclick={() => handleSelect(entry.emoji)}
+								>
+									{entry.emoji}
+								</button>
+							{/each}
+						</div>
+					{:else}
+						<div class="emoji-grid-placeholder" style="height:{Math.ceil(category.emoji.length / 8) * 40}px"></div>
+					{/if}
 				</div>
 			{/each}
 		{/if}
@@ -237,6 +301,10 @@
 		display: grid;
 		grid-template-columns: repeat(8, 1fr);
 		gap: 2px;
+	}
+
+	.emoji-grid-placeholder {
+		/* Reserves approximate space for lazy-loaded emoji grids to prevent scroll jumps. */
 	}
 
 	.emoji-btn {

@@ -259,6 +259,9 @@ export function removeReaction(
  * Prepend messages to the beginning of a channel buffer (for history loading).
  * When the combined length exceeds max capacity, trims from the end (newest)
  * since the user is scrolling up to view older history.
+ *
+ * Note (CR-060): The spread copies here are O(n) for n <= MAX_MESSAGES_PER_CHANNEL (500).
+ * At this scale the allocation is sub-millisecond and not a bottleneck.
  */
 export function prependMessages(target: string, msgs: Message[]): void {
 	ensureChannel(target);

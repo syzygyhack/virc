@@ -369,22 +369,30 @@
 		isAtBottom = scrollHeight - scrollTop - clientHeight <= SCROLL_BOTTOM_THRESHOLD;
 	}
 
-	/** Handle scroll events. */
+	/** RAF guard for scroll throttling. */
+	let scrollRafId: number | undefined;
+
+	/** Handle scroll events (throttled via requestAnimationFrame). */
 	function handleScroll(): void {
-		if (scrollContainer) {
-			currentScrollTop = scrollContainer.scrollTop;
-		}
+		if (scrollRafId !== undefined) return;
+		scrollRafId = requestAnimationFrame(() => {
+			scrollRafId = undefined;
 
-		checkScrollPosition();
+			if (scrollContainer) {
+				currentScrollTop = scrollContainer.scrollTop;
+			}
 
-		if (isAtBottom) {
-			unreadCount = 0;
-		}
+			checkScrollPosition();
 
-		// Trigger history load when near top
-		if (scrollContainer && scrollContainer.scrollTop <= SCROLL_TOP_THRESHOLD) {
-			loadOlderMessages();
-		}
+			if (isAtBottom) {
+				unreadCount = 0;
+			}
+
+			// Trigger history load when near top
+			if (scrollContainer && scrollContainer.scrollTop <= SCROLL_TOP_THRESHOLD) {
+				loadOlderMessages();
+			}
+		});
 	}
 
 	/** Request older messages via CHATHISTORY BEFORE. */
@@ -512,6 +520,7 @@
 
 	onDestroy(() => {
 		window.removeEventListener('virc:scroll-to-message', handleExternalScroll);
+		if (scrollRafId !== undefined) cancelAnimationFrame(scrollRafId);
 	});
 </script>
 

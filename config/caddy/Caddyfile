@@ -1,4 +1,16 @@
-:80 {
+{$SITE_ADDRESS::80} {
+    # Security headers
+    header {
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Content-Security-Policy "default-src 'self'; connect-src 'self' ws: wss:; img-src 'self' data: blob: https:; media-src 'self' blob: https:; style-src 'self' 'unsafe-inline'; script-src 'self'"
+        -Server
+    }
+
+    # Compression
+    encode gzip zstd
+
     # IRC WebSocket
     handle /ws {
         reverse_proxy ergo:8097

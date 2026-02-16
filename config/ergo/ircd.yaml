@@ -106,9 +106,11 @@ server:
         # This prevents malicious websites from making their visitors connect to your
         # ergo instance without their knowledge. An empty list means there are no
         # restrictions.
+        # NOTE: docker-compose overrides this via ERGO__SERVER__WEBSOCKETS__ALLOWED_ORIGINS.
         allowed-origins:
-            # - "https://ergo.chat"
-            # - "https://*.ergo.chat"
+            # PRODUCTION: uncomment and set to your domain to prevent cross-origin
+            # WebSocket connections from malicious sites.
+            # - "https://chat.example.com"
 
     # casemapping controls what kinds of strings are permitted as identifiers (nicknames,
     # channel names, account names, etc.), and how they are normalized for case.
@@ -246,7 +248,9 @@ server:
         # whether to limit the total number of concurrent connections per IP/CIDR
         count: true
         # maximum concurrent connections per IP/CIDR
-        max-concurrent-connections: 16
+        # Raised from 16: virc users behind NAT or using multiple devices
+        # (desktop + phone + web) can exceed the default quickly.
+        max-concurrent-connections: 64
 
         # whether to restrict the rate of new connections per IP/CIDR
         throttle: true
@@ -362,10 +366,10 @@ server:
     # e.g., `NickServ!NickServ@localhost`. uncomment this to override:
     #override-services-hostname: "example.network"
 
-    # in a "closed-loop" system where you control the server and all the clients,
-    # you may want to increase the maximum (non-tag) length of an IRC line from
-    # the default value of 512. DO NOT change this on a public server:
-    #max-line-len: 512
+    # virc is a closed-loop system (we control server + all clients).
+    # Increase from the default 512 to allow longer messages, file URLs,
+    # and markdown without silent truncation or rejection.
+    max-line-len: 2048
 
     # send all 0's as the LUSERS (user counts) output to non-operators; potentially useful
     # if you don't want to publicize how popular the server is
@@ -405,8 +409,8 @@ accounts:
             max-attempts: 30
 
         # this is the bcrypt cost we'll use for account passwords
-        # (note that 4 is the lowest value allowed by the bcrypt library)
-        bcrypt-cost: 4
+        # (10 is the standard default; 4 is the library minimum)
+        bcrypt-cost: 10
 
         # length of time a user has to verify their account before it can be re-registered
         verify-timeout: "32h"
@@ -460,7 +464,10 @@ accounts:
         duration:  1m
 
         # number of attempts allowed within the window
-        max-attempts: 3
+        # Raised from 3: the auth bridge (virc-files) validates credentials
+        # via Ergo's HTTP API, and users may also connect via SASL —
+        # both count toward this limit for the same account.
+        max-attempts: 6
 
     # some clients (notably Pidgin and Hexchat) offer only a single password field,
     # which makes it impossible to specify a separate server password (for the PASS
@@ -560,7 +567,7 @@ accounts:
         always-on: "opt-out"
 
         # whether to mark always-on clients away when they have no active connections:
-        auto-away: "opt-in"
+        auto-away: "opt-out"
 
         # QUIT always-on clients from the server if they go this long without connecting
         # (use 0 or omit for no expiration):
@@ -723,39 +730,13 @@ oper-classes:
 
 # ircd operators
 opers:
-    # default operator named 'admin'; log in with /OPER admin <password>
-    admin:
-        # which capabilities this oper has access to
-        class: "server-admin"
-
-        # traditionally, operator status is visible to unprivileged users in
-        # WHO and WHOIS responses. this can be disabled with 'hidden'.
-        hidden: true
-
-        # custom whois line (if `hidden` is enabled, visible only to other operators)
-        whois-line: is the server administrator
-
-        # custom hostname (ignored if `hidden` is enabled)
-        #vhost: "staff"
-
-        # modes are modes to auto-set upon opering-up. uncomment this to automatically
-        # enable snomasks ("server notification masks" that alert you to server events;
-        # see `/quote help snomasks` while opered-up for more information):
-        #modes: +is acdjknoqtuxv
-
-        # operators can be authenticated either by password (with the /OPER command),
-        # or by certificate fingerprint, or both. if a password hash is set, then a
-        # password is required to oper up (e.g., /OPER dan mypassword). to generate
-        # the hash, use `ergo genpasswd`.
-        password: "$2a$04$0123456789abcdef0123456789abcdef0123456789abcdef01234"
-
-        # if a SHA-256 certificate fingerprint is configured here, then it will be
-        # required to /OPER. if you comment out the password hash above, then you can
-        # /OPER without a password.
-        #certfp: "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
-        # if 'auto' is set (and no password hash is set), operator permissions will be
-        # granted automatically as soon as you connect with the right fingerprint.
-        #auto: true
+    # To add an operator, uncomment and configure with a real password hash:
+    #   ergo genpasswd
+    # admin:
+    #     class: "server-admin"
+    #     hidden: true
+    #     whois-line: is the server administrator
+    #     password: "$2a$04$GENERATE_WITH_ergo_genpasswd"
 
     # example of a moderator named 'alice'
     # (log in with /OPER alice <password>):
@@ -793,10 +774,10 @@ logging:
         #   internal        unexpected runtime behavior, including potential bugs
         #   userinput       raw lines sent by users
         #   useroutput      raw lines sent to users
-        type: "*"
+        type: "* -userinput -useroutput"
 
         # one of: debug info warn error
-        level: debug
+        level: info
     #-
     #   # example of a file log that avoids logging IP addresses
     #   method: file
@@ -844,6 +825,7 @@ datastore:
         # if socket-path is set, it will be used instead of host:port
         #socket-path: "/var/run/mysqld/mysqld.sock"
         user: "root"
+        # NOTE: docker-compose overrides this via ERGO__DATASTORE__MYSQL__PASSWORD.
         password: "changeme"
         history-database: "ergo_history"
         timeout: 3s
@@ -913,11 +895,13 @@ fakelag:
     window: 1s
 
     # clients can send this many commands without fakelag being imposed
-    burst-limit: 5
+    # Raised from 5: virc sends typing indicators, reactions, read markers,
+    # and messages in rapid succession during normal use.
+    burst-limit: 10
 
     # once clients have exceeded their burst allowance, they can send only
     # this many commands per `window`:
-    messages-per-window: 2
+    messages-per-window: 4
 
     # client status resets to the default state if they go this long without
     # sending any commands:
@@ -931,6 +915,8 @@ fakelag:
         "MONITOR":     1
         "WHO":         4
         "WEBPUSH":     1
+        "TAGMSG":      16
+        "REDACT":      8
 
 # the roleplay commands are semi-standardized extensions to IRC that allow
 # sending and receiving messages from pseudo-nicknames. this can be used either
@@ -987,7 +973,8 @@ history:
     channel-length: 2048
 
     # how many direct messages and notices should be tracked per user?
-    client-length: 256
+    # Increased from default 256 — DMs are a core feature, not secondary.
+    client-length: 2048
 
     # how long should we try to preserve messages?
     # if `autoresize-window` is 0, the in-memory message buffers are preallocated to
@@ -1012,7 +999,9 @@ history:
     restrictions:
         # if this is set, messages older than this cannot be retrieved by anyone
         # (and will eventually be deleted from persistent storage, if that's enabled)
-        expire-time: 1w
+        # With MySQL persistence there's no technical reason for a short window.
+        # 90 days is reasonable for a chat app; the DB handles long-term storage.
+        expire-time: 90d
 
         # this restricts access to channel history (it can be overridden by channel
         # owners). options are: 'none' (no restrictions), 'registration-time'
@@ -1057,7 +1046,7 @@ history:
     retention:
         # allow users to delete their own messages from history,
         # and channel operators to delete messages in their channel?
-        allow-individual-delete: false
+        allow-individual-delete: true
 
         # if persistent history is enabled, create additional index tables,
         # allowing deletion of JSON export of an account's messages. this
@@ -1133,5 +1122,7 @@ api:
     # these must be strong, unique, high-entropy printable ASCII strings.
     # to generate a new token, use `ergo gentoken` or:
     # python3 -c "import secrets; print(secrets.token_urlsafe(32))"
+    # NOTE: docker-compose overrides this via ERGO__API__BEARER_TOKENS.
     bearer-tokens:
-        - "sTcmero5do9UZFqJ8HYSpgnXUckvTLtnbY1uRYeU1Ak"
+        # Must match ERGO_API_TOKEN in .env — generate with: openssl rand -base64 32
+        - "change-me-to-a-random-string"

@@ -1,3 +1,7 @@
+##
+# NOTE: docker-compose injects LiveKit config via LIVEKIT_CONFIG.
+# This file is a reference for manual LiveKit runs or customization.
+##
 port: 7880
 rtc:
     tcp_port: 7881

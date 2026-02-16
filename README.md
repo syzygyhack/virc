@@ -23,7 +23,8 @@ virc wraps the battle-tested IRC protocol in a modern UI — real-time messaging
 │  - Channels  │   - JWT minting      │  - Mute/deafen    │
 │  - History   │   - Config serving   │  - Speaker detect │
 │  - Always-on │   - LK token gen     │                   │
-│  - WebSocket │                      │                   │
+│  - WebSocket │   - File uploads     │                   │
+│              │   - URL previews     │                   │
 ├──────────────┴──────────────────────┴───────────────────┤
 │                   MariaDB                               │
 │              (message history)                          │
@@ -33,13 +34,13 @@ virc wraps the battle-tested IRC protocol in a modern UI — real-time messaging
 └─────────────────────────────────────────────────────────┘
 ```
 
-The client connects to Ergo over a single WebSocket for all chat functionality. Voice goes peer-to-peer via LiveKit. The backend (`virc-files`) is a thin auth bridge — it validates credentials against Ergo's HTTP API, mints JWTs, and serves server configuration. Caddy fronts everything.
+The client connects to Ergo over a single WebSocket for all chat functionality. Voice goes peer-to-peer via LiveKit. The backend (`virc-files`) handles auth (validating credentials against Ergo's HTTP API and minting JWTs), file uploads, URL preview unfurling, invite links, and server configuration. Caddy fronts everything.
 
 ### Design Decisions
 
 **Why IRC?** Ergo is a single Go binary that provides accounts, channels, message history, always-on clients, and a full IRCv3 extension set out of the box. It replaces what would otherwise be a custom chat server, a message queue, a presence system, and a history database.
 
-**Why Svelte 5?** Rune-based reactivity (`$state`, `$derived`, `$effect`) maps naturally to chat state — 10 reactive stores with zero external state management libraries.
+**Why Svelte 5?** Rune-based reactivity (`$state`, `$derived`, `$effect`) maps naturally to chat state — 14 reactive stores with zero external state management libraries.
 
 **Why LiveKit?** Single binary SFU with a client SDK. Voice channels are just LiveKit rooms keyed by channel name.
 
@@ -58,7 +59,7 @@ The client connects to Ergo over a single WebSocket for all chat functionality. 
 - Typing indicators (throttled, auto-expiring)
 - Read markers synced via MARKREAD
 - Unread badges and mention counts
-- Slash command popup with 10 IRC commands, descriptions, and keyboard navigation
+- Slash command popup with 12 IRC commands, descriptions, and keyboard navigation
 - Commands gated by channel privilege level (mod commands require halfop+)
 - `//` escape to send literal `/`-prefixed messages
 
@@ -89,12 +90,13 @@ The client connects to Ergo over a single WebSocket for all chat functionality. 
 ### Account
 - Display name editing in settings UI
 - Nick change via `/nick` command
-- Persistent login across app restarts (localStorage)
+- Persistent login across app restarts (OS keychain via Tauri, localStorage fallback for web)
 
 ### Desktop (Tauri 2)
 - Native window with 1280x800 default, 600x400 minimum
 - Bundled for Windows (.msi/.exe), macOS (.dmg), and Linux (.deb/.AppImage)
 - Splash screen with fade-out transition on startup
+- OS keychain credential storage (Windows Credential Manager, macOS Keychain, Linux Secret Service)
 - No browser required — runs as a standalone app
 
 ### UI
@@ -176,7 +178,7 @@ To make the server accessible to other machines on your network:
    ```
    LIVEKIT_CLIENT_URL=ws://192.168.1.100:7880
    ```
-2. `use_external_ip` is already enabled in `config/livekit/config.yaml`.
+2. `use_external_ip` is already enabled in the LiveKit config (see `docker-compose.yml` or `config/livekit/config.yaml`).
 3. Restart: `docker compose up -d`
 
 All Docker services bind to `0.0.0.0` by default, so ports are already network-accessible.
@@ -197,20 +199,6 @@ Requires [Rust](https://rustup.rs/) and platform-specific Tauri dependencies (se
 
 ### Development
 
-All backend services run in Docker. Only the Vite dev server runs on the host:
-
-```bash
-# Linux / macOS
-./dev.sh
-
-# Windows (PowerShell)
-.\dev.ps1
-```
-
-This starts the full Docker stack (`docker compose up -d`) then launches the Vite dev server with HMR. The Vite config proxies `/ws` to Ergo and `/api`/`/.well-known` to virc-files inside Docker.
-
-Or manually:
-
 ```bash
 # Start all services
 docker compose up -d
@@ -222,10 +210,10 @@ cd virc-client && npm install && npm run dev
 ### Run Tests
 
 ```bash
-# Client tests (324 tests, Vitest)
+# Client tests (535 tests, Vitest)
 cd virc-client && npm test
 
-# Server tests (34 tests, Bun)
+# Server tests (116 tests, Bun)
 cd virc-files && bun test
 ```
 
@@ -237,7 +225,7 @@ cd virc-files && bun test
 virc/
 ├── virc-client/                 # Svelte 5 + SvelteKit frontend
 │   ├── src/
-│   │   ├── components/          # 17 Svelte components
+│   │   ├── components/          # 23 Svelte components
 │   │   ├── lib/
 │   │   │   ├── api/             # Auth tokens + server discovery
 │   │   │   ├── irc/             # IRC protocol layer
@@ -248,7 +236,7 @@ virc/
 │   │   │   │   ├── cap.ts       # CAP negotiation
 │   │   │   │   ├── sasl.ts      # SASL PLAIN auth
 │   │   │   │   └── format.ts    # mIRC ↔ HTML rendering
-│   │   │   ├── state/           # 10 reactive stores ($state runes)
+│   │   │   ├── state/           # 14 reactive stores ($state runes)
 │   │   │   ├── voice/           # LiveKit room management
 │   │   │   └── keybindings.ts   # Keyboard shortcut system
 │   │   └── routes/
@@ -265,16 +253,17 @@ virc/
 │       ├── routes/
 │       │   ├── auth.ts          # POST /api/auth (JWT minting)
 │       │   ├── livekit.ts       # POST /api/livekit/token
-│       │   └── config.ts        # GET /.well-known/virc.json
+│       │   ├── config.ts        # GET /.well-known/virc.json
+│       │   ├── files.ts         # File upload/download
+│       │   ├── invite.ts        # Invite link generation
+│       │   └── preview.ts       # URL unfurling (OpenGraph)
 │       ├── middleware/auth.ts   # JWT verification
 │       └── env.ts               # Environment config
 ├── config/
 │   ├── ergo/ircd.yaml           # Ergo IRC server config
-│   ├── livekit/config.yaml      # LiveKit SFU config
+│   ├── livekit/config.yaml      # LiveKit SFU config (reference for manual runs)
 │   └── caddy/Caddyfile          # Reverse proxy rules
 ├── docker-compose.yml           # 5-service stack
-├── dev.sh                       # Dev launcher (Linux/macOS)
-├── dev.ps1                      # Dev launcher (Windows)
 ├── PLAN.md                      # Architecture spec
 └── FRONTEND.md                  # UI/UX design spec
 ```
@@ -317,16 +306,22 @@ No client forking required for customization.
 | Variable | Required | Default | Purpose |
 |----------|----------|---------|---------|
 | `JWT_SECRET` | Yes | — | JWT signing key |
-| `LIVEKIT_API_KEY` | Yes | — | LiveKit API key |
-| `LIVEKIT_API_SECRET` | Yes | — | LiveKit API secret |
+| `LIVEKIT_API_KEY` | Yes | `devkey` | LiveKit API key |
+| `LIVEKIT_API_SECRET` | Yes | `devsecret` | LiveKit API secret |
+| `MYSQL_ROOT_PASSWORD` | Yes | `changeme` | MariaDB root password (docker-compose syncs into Ergo) |
 | `ERGO_API` | No | `http://ergo:8089` | Ergo HTTP API URL |
-| `ERGO_API_TOKEN` | No | _(generated)_ | Bearer token for Ergo HTTP API |
+| `ERGO_API_TOKEN` | Yes | `dev-ergo-api-token` | Bearer token for Ergo HTTP API (injected into Ergo config) |
+| `ERGO_WEBSOCKET_ORIGINS` | No | `["http://localhost","http://127.0.0.1"]` | JSON array of allowed Origin values for IRC WebSocket connections |
 | `LIVEKIT_URL` | No | `ws://livekit:7880` | Internal LiveKit signaling URL |
 | `LIVEKIT_CLIENT_URL` | No | `ws://localhost:7880` | Client-facing LiveKit URL (set to LAN IP for network access) |
-| `ALLOWED_ORIGIN` | No | _(disabled)_ | Origin header check for CSRF |
+| `ALLOWED_ORIGIN` | No | _(reject all)_ | CORS allowed origin(s). Comma-separated list. When unset, all cross-origin requests are rejected |
+| `BASE_URL` | No | — | Base URL for invite links (falls back to request Origin/Host) |
+| `SITE_ADDRESS` | No | `:80` | Caddy site address (set to domain for auto-HTTPS) |
+| `MAX_FILE_SIZE` | No | `26214400` | Max upload size in bytes (25 MB) |
 | `PORT` | No | `8080` | Backend listen port |
 | `CONFIG_PATH` | No | `config/virc.json` | Server config file path |
 | `SERVER_NAME` | No | — | Server display name |
+| `SERVER_ID` | No | — | Stable server identifier for JWTs/invite links (URL-safe; defaults to BASE_URL host or safe SERVER_NAME) |
 
 ---
 
@@ -336,8 +331,8 @@ No client forking required for customization.
 |---------|-------|-------|---------|
 | **ergo** | `ghcr.io/ergochat/ergo:stable` | 6667, 8097 | IRC server (WebSocket + plaintext) |
 | **mysql** | `mariadb:11` | 3306 | Message history persistence |
-| **livekit** | `livekit/livekit-server:latest` | 7880-7881, 50000-50100/udp | Voice/video SFU |
-| **virc-files** | Built from `./virc-files` | 8080 | Auth bridge + config |
+| **livekit** | `livekit/livekit-server:v1.9.11` | 7880-7881, 50060-50160/udp | Voice/video SFU |
+| **virc-files** | Built from `./virc-files` | 8080 | Auth bridge, file uploads, config |
 | **caddy** | `caddy:2` | 80, 443 | Reverse proxy + static SPA |
 
 ---
@@ -357,7 +352,7 @@ No client forking required for customization.
 | JWT library | jose | 6 |
 | Backend runtime | Bun | 1.3+ |
 | IRC server | Ergo | stable |
-| Voice server | LiveKit | latest |
+| Voice server | LiveKit | 1.9.11 |
 | Database | MariaDB | 11 |
 | Reverse proxy | Caddy | 2 |
 | TypeScript | | 5 |
@@ -368,31 +363,42 @@ No client forking required for customization.
 
 | Suite | Tests |
 |-------|-------|
-| IRC handler | 56 |
-| IRC format/rendering | 34 |
-| Message store | 31 |
+| IRC handler | 60 |
+| Message store | 58 |
+| IRC format/rendering | 48 |
+| Notification store | 38 |
 | Member store | 27 |
-| IRC commands | 20 |
+| Keybindings | 27 |
+| Theme store | 23 |
+| IRC commands | 29 |
+| Emoji library | 21 |
+| Media | 20 |
 | IRC parser | 18 |
-| Notification store | 16 |
+| Voice store | 18 |
+| System messages | 17 |
+| File preview (client) | 17 |
+| App settings | 15 |
 | IRC connection | 14 |
-| Emoji library | 13 |
+| Auth API (client) | 13 |
 | Typing store | 13 |
-| Voice store | 13 |
 | CAP negotiation | 12 |
-| Keybindings | 11 |
 | SASL auth | 11 |
 | Discovery | 10 |
-| Auth API (client) | 9 |
 | Connection store | 9 |
 | User store | 7 |
-| **Client total** | **324** |
-| Auth endpoint (server) | 11 |
-| LiveKit endpoint (server) | 7 |
-| Config endpoint (server) | 6 |
-| Auth middleware (server) | 10 |
-| **Server total** | **34** |
-| **Total** | **358** |
+| File upload (client) | 5 |
+| Raw IRC log | 5 |
+| **Client total** | **535** |
+| URL preview (server) | 43 |
+| Invite endpoint | 17 |
+| Auth endpoint | 15 |
+| File upload endpoint | 12 |
+| Config endpoint | 11 |
+| LiveKit endpoint | 6 |
+| Auth middleware | 7 |
+| Rate limiter | 5 |
+| **Server total** | **116** |
+| **Total** | **651** |
 
 ---
 
@@ -400,10 +406,8 @@ No client forking required for customization.
 
 | Item | Current State | Notes |
 |------|--------------|-------|
-| File uploads / media embeds | Not implemented | Planned via virc-files |
-| URL unfurling (OpenGraph) | Not implemented | Requires server-side fetch |
 | Push notifications | Not implemented | Web Push API planned |
-| Custom server emoji | Config structure ready | Rendering not wired |
+| Custom server emoji | Config structure ready | Rendered in emoji picker, tab completion, and messages |
 | Search | Not implemented | Ergo SEARCH extension available |
 | User profiles / avatars | Partial | Generated initials only |
 | Screen sharing / video | Audio only | LiveKit supports it |
@@ -439,13 +443,13 @@ The process:
 
 | Metric | Value |
 |--------|-------|
-| TypeScript + Svelte source | ~11,500 lines |
-| Test code | ~4,060 lines |
+| TypeScript + Svelte source | ~19,000 lines |
+| Test code | ~7,100 lines |
 | Design specs | ~1,860 lines |
-| Infrastructure config | ~1,290 lines |
-| Commits | 41 |
+| Infrastructure config | ~1,270 lines |
+| Commits | 65 |
 | Packages | 2 |
-| Tests | 358 |
+| Tests | 651 |
 
 ---
 

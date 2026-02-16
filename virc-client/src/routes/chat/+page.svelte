@@ -46,6 +46,7 @@
 	import QuickSwitcher from '../../components/QuickSwitcher.svelte';
 	import AuthExpiredModal from '../../components/AuthExpiredModal.svelte';
 	import UserSettings from '../../components/UserSettings.svelte';
+	import ServerSettings from '../../components/ServerSettings.svelte';
 	import ErrorBoundary from '../../components/ErrorBoundary.svelte';
 	import ConnectionBanner from '../../components/ConnectionBanner.svelte';
 	import VoiceOverlay from '../../components/VoiceOverlay.svelte';
@@ -55,6 +56,7 @@
 	import UserProfilePopout from '../../components/UserProfilePopout.svelte';
 	import { appSettings } from '$lib/state/appSettings.svelte';
 	import { applyServerTheme, clearServerTheme, parseServerTheme } from '$lib/state/theme.svelte';
+	import { setServerConfig, resetServerConfig } from '$lib/state/serverConfig.svelte';
 	import { setCustomEmoji, clearCustomEmoji } from '$lib/emoji';
 
 	/** virc.json config shape (subset we consume). */
@@ -62,6 +64,11 @@
 		name?: string;
 		icon?: string;
 		filesUrl?: string;
+		description?: string;
+		welcome?: {
+			message?: string;
+			suggested_channels?: string[];
+		};
 		channels?: {
 			categories?: Array<{
 				name: string;
@@ -113,6 +120,7 @@
 
 	// Settings modal state
 	let showSettings = $state(false);
+	let showServerSettings = $state(false);
 
 	// Voice overlay state
 	let showVoiceOverlay = $state(false);
@@ -746,6 +754,11 @@
 			// 5. Fetch virc.json
 			const config = filesUrl ? await fetchVircConfig(filesUrl) : null;
 
+			// 5b. Store config for ServerSettings modal
+			if (config) {
+				setServerConfig(config);
+			}
+
 			// 6. Register server in state
 			const serverName = config?.name ?? 'IRC Server';
 			const serverIcon = config?.icon ?? null;
@@ -1221,6 +1234,10 @@
 						showSettings = false;
 						return true;
 					}
+					if (showServerSettings) {
+						showServerSettings = false;
+						return true;
+					}
 					if (showQuickSwitcher) {
 						showQuickSwitcher = false;
 						return true;
@@ -1461,9 +1478,10 @@
 			conn = null;
 		}
 
-		// Clear server theme overrides and custom emoji on teardown
+		// Clear server theme overrides, custom emoji, and config on teardown
 		clearServerTheme();
 		clearCustomEmoji();
+		resetServerConfig();
 	});
 </script>
 
@@ -1475,7 +1493,7 @@
 
 	<!-- Left column: Channel sidebar -->
 	<div class="left-panel" class:overlay={sidebarIsOverlay} class:visible={sidebarIsOverlay && showSidebar}>
-		<ChannelSidebar onVoiceChannelClick={handleVoiceChannelClick} {voiceRoom} onSettingsClick={() => (showSettings = true)} onVoiceExpand={() => (showVoiceOverlay = true)} />
+		<ChannelSidebar onVoiceChannelClick={handleVoiceChannelClick} {voiceRoom} onSettingsClick={() => (showSettings = true)} onServerSettingsClick={() => (showServerSettings = true)} onVoiceExpand={() => (showVoiceOverlay = true)} />
 	</div>
 
 	<!-- Sidebar overlay backdrop -->
@@ -1631,6 +1649,10 @@
 <!-- User Settings modal -->
 {#if showSettings}
 	<UserSettings onclose={() => (showSettings = false)} connection={conn} />
+{/if}
+
+{#if showServerSettings}
+	<ServerSettings onclose={() => (showServerSettings = false)} />
 {/if}
 
 <!-- Voice overlay (expanded view with video grid + participants) -->

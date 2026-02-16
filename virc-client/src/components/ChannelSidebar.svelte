@@ -24,10 +24,27 @@
 		onVoiceChannelClick?: (channel: string) => void;
 		voiceRoom?: Room | null;
 		onSettingsClick?: () => void;
+		onServerSettingsClick?: () => void;
 		onVoiceExpand?: () => void;
 	}
 
-	let { onVoiceChannelClick, voiceRoom = null, onSettingsClick, onVoiceExpand }: Props = $props();
+	let { onVoiceChannelClick, voiceRoom = null, onSettingsClick, onServerSettingsClick, onVoiceExpand }: Props = $props();
+
+	/** Dropdown state for server name header. */
+	let serverDropdownOpen = $state(false);
+
+	function toggleServerDropdown(): void {
+		serverDropdownOpen = !serverDropdownOpen;
+	}
+
+	function closeServerDropdown(): void {
+		serverDropdownOpen = false;
+	}
+
+	function handleServerSettings(): void {
+		serverDropdownOpen = false;
+		onServerSettingsClick?.();
+	}
 
 	/** Collapsed state for the "Other" category. */
 	let otherCollapsed = $state(false);
@@ -129,7 +146,23 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <aside class="channel-sidebar" aria-label="Channels" onclick={closeContextMenu}>
 	<div class="server-header">
-		<span class="server-name">{getActiveServer()?.name ?? 'virc'}</span>
+		<button class="server-header-btn" onclick={toggleServerDropdown} aria-expanded={serverDropdownOpen} aria-label="Server menu">
+			<span class="server-name">{getActiveServer()?.name ?? 'virc'}</span>
+			<svg class="server-chevron" class:open={serverDropdownOpen} width="12" height="12" viewBox="0 0 12 12">
+				<path d="M3 4.5l3 3 3-3" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" />
+			</svg>
+		</button>
+		{#if serverDropdownOpen}
+			<div class="server-dropdown" role="menu">
+				<button class="server-dropdown-item" role="menuitem" onclick={handleServerSettings}>
+					<svg width="14" height="14" viewBox="0 0 24 24">
+						<path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" stroke="currentColor" stroke-width="2" fill="none" />
+						<path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" stroke="currentColor" stroke-width="2" fill="none" />
+					</svg>
+					Server Settings
+				</button>
+			</div>
+		{/if}
 	</div>
 
 	<div class="channel-list">
@@ -348,6 +381,12 @@
 	</div>
 {/if}
 
+{#if serverDropdownOpen}
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<div class="server-dropdown-overlay" onclick={closeServerDropdown}></div>
+{/if}
+
 <style>
 	.channel-sidebar {
 		display: flex;
@@ -360,12 +399,30 @@
 	}
 
 	.server-header {
+		position: relative;
 		display: flex;
 		align-items: center;
 		height: 48px;
-		padding: 0 16px;
 		border-bottom: 1px solid var(--surface-lowest);
 		flex-shrink: 0;
+	}
+
+	.server-header-btn {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		width: 100%;
+		height: 100%;
+		padding: 0 16px;
+		background: none;
+		border: none;
+		cursor: pointer;
+		font-family: var(--font-primary);
+		transition: background var(--duration-channel);
+	}
+
+	.server-header-btn:hover {
+		background: var(--surface-high);
 	}
 
 	.server-name {
@@ -375,6 +432,58 @@
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
+		flex: 1;
+		text-align: left;
+	}
+
+	.server-chevron {
+		flex-shrink: 0;
+		color: var(--text-muted);
+		transition: transform var(--duration-channel);
+	}
+
+	.server-chevron.open {
+		transform: rotate(180deg);
+	}
+
+	.server-dropdown {
+		position: absolute;
+		top: 100%;
+		left: 8px;
+		right: 8px;
+		background: var(--surface-highest);
+		border-radius: 6px;
+		padding: 4px;
+		box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+		z-index: 100;
+	}
+
+	.server-dropdown-item {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		width: 100%;
+		padding: 8px 10px;
+		background: none;
+		border: none;
+		border-radius: 3px;
+		cursor: pointer;
+		color: var(--text-primary);
+		font-size: var(--font-sm);
+		font-family: var(--font-primary);
+		text-align: left;
+		transition: background 80ms;
+	}
+
+	.server-dropdown-item:hover {
+		background: var(--accent-bg);
+		color: var(--text-primary);
+	}
+
+	.server-dropdown-overlay {
+		position: fixed;
+		inset: 0;
+		z-index: 99;
 	}
 
 	.channel-list {

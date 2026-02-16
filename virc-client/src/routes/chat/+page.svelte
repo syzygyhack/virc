@@ -1497,7 +1497,7 @@
 
 	<!-- Left column: Channel sidebar -->
 	<div class="left-panel" class:overlay={sidebarIsOverlay} class:visible={sidebarIsOverlay && showSidebar} style="width: {appSettings.sidebarWidth}px;">
-		<ChannelSidebar onVoiceChannelClick={handleVoiceChannelClick} {voiceRoom} onSettingsClick={() => (showSettings = true)} onServerSettingsClick={() => { serverSettingsInitialTab = 'overview'; showServerSettings = true; }} onVoiceExpand={() => (showVoiceOverlay = true)} />
+		<ChannelSidebar onVoiceChannelClick={handleVoiceChannelClick} {voiceRoom} onSettingsClick={() => (showSettings = true)} onServerSettingsClick={() => { serverSettingsInitialTab = 'overview'; showServerSettings = true; }} onCreateChannel={(ch) => { if (conn) { join(conn, [ch]); setActiveChannel(ch); chathistory(conn, 'LATEST', ch, '*', '50'); } }} onVoiceExpand={() => (showVoiceOverlay = true)} />
 		{#if !sidebarIsOverlay}
 			<ResizeHandle side="left" min={SIDEBAR_MIN} max={SIDEBAR_MAX} width={appSettings.sidebarWidth} onresize={(w) => { appSettings.sidebarWidth = w; }} />
 		{/if}

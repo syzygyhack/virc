@@ -7,6 +7,8 @@
 		type ChannelCategory,
 	} from '$lib/state/channels.svelte';
 	import { getActiveServer } from '$lib/state/servers.svelte';
+	import { getMember } from '$lib/state/members.svelte';
+	import { userState } from '$lib/state/user.svelte';
 	import { voiceState, type VoiceParticipant } from '$lib/state/voice.svelte';
 	import {
 		getUnreadCount,
@@ -25,10 +27,11 @@
 		voiceRoom?: Room | null;
 		onSettingsClick?: () => void;
 		onServerSettingsClick?: () => void;
+		onCreateChannel?: (channel: string) => void;
 		onVoiceExpand?: () => void;
 	}
 
-	let { onVoiceChannelClick, voiceRoom = null, onSettingsClick, onServerSettingsClick, onVoiceExpand }: Props = $props();
+	let { onVoiceChannelClick, voiceRoom = null, onSettingsClick, onServerSettingsClick, onCreateChannel, onVoiceExpand }: Props = $props();
 
 	/** Dropdown state for server name header. */
 	let serverDropdownOpen = $state(false);
@@ -44,6 +47,48 @@
 	function handleServerSettings(): void {
 		serverDropdownOpen = false;
 		onServerSettingsClick?.();
+	}
+
+	/**
+	 * Whether the current user has op (@) or higher in any channel.
+	 * Used to show the create channel '+' button next to category headers.
+	 */
+	let isOp = $derived.by(() => {
+		const nick = userState.nick;
+		if (!nick) return false;
+		// Check the active channel first
+		const active = channelUIState.activeChannel;
+		if (active) {
+			const member = getMember(active, nick);
+			if (member?.highestMode && ['~', '&', '@'].includes(member.highestMode)) {
+				return true;
+			}
+		}
+		return false;
+	});
+
+	/** State for the create/join channel dialog. */
+	let showCreateChannel = $state(false);
+	let newChannelName = $state('');
+
+	function handleCreateChannelClick(e: MouseEvent): void {
+		e.stopPropagation();
+		showCreateChannel = true;
+		newChannelName = '#';
+	}
+
+	function closeCreateChannel(): void {
+		showCreateChannel = false;
+		newChannelName = '';
+	}
+
+	function handleCreateChannelSubmit(): void {
+		const name = newChannelName.trim();
+		if (!name) return;
+		// Ensure channel starts with #
+		const channel = name.startsWith('#') ? name : `#${name}`;
+		onCreateChannel?.(channel);
+		closeCreateChannel();
 	}
 
 	/** Collapsed state for the "Other" category. */
@@ -205,23 +250,37 @@
 
 		{#each channelUIState.categories as cat (cat.name)}
 			<div class="category">
-				<button
-					class="category-header"
-					onclick={() => handleCategoryClick(cat)}
-					aria-expanded={!cat.collapsed}
-					aria-label="{cat.name} category"
-				>
-					<svg
-						class="chevron"
-						class:collapsed={cat.collapsed}
-						width="10"
-						height="10"
-						viewBox="0 0 10 10"
+				<div class="category-header-row">
+					<button
+						class="category-header"
+						onclick={() => handleCategoryClick(cat)}
+						aria-expanded={!cat.collapsed}
+						aria-label="{cat.name} category"
 					>
-						<path d="M2 3l3 3 3-3" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" />
-					</svg>
-					<span class="category-name">{cat.name}</span>
-				</button>
+						<svg
+							class="chevron"
+							class:collapsed={cat.collapsed}
+							width="10"
+							height="10"
+							viewBox="0 0 10 10"
+						>
+							<path d="M2 3l3 3 3-3" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" />
+						</svg>
+						<span class="category-name">{cat.name}</span>
+					</button>
+					{#if isOp && !cat.voice}
+						<button
+							class="create-channel-btn"
+							onclick={handleCreateChannelClick}
+							aria-label="Create channel"
+							title="Create channel"
+						>
+							<svg width="14" height="14" viewBox="0 0 16 16">
+								<path d="M8 2v12M2 8h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+							</svg>
+						</button>
+					{/if}
+				</div>
 
 				{#if !cat.collapsed}
 					<div class="category-channels">
@@ -245,6 +304,11 @@
 											d="M8 1a3 3 0 0 0-3 3v4a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3zM5 8a1 1 0 0 0-2 0 5 5 0 0 0 4 4.9V14H5a1 1 0 0 0 0 2h6a1 1 0 0 0 0-2H9v-1.1A5 5 0 0 0 13 8a1 1 0 0 0-2 0 3 3 0 0 1-6 0z"
 											fill="currentColor"
 										/>
+									</svg>
+								{:else if cat.isReadonly}
+									<svg class="channel-icon pin-icon" width="14" height="14" viewBox="0 0 24 24" aria-label="Read-only channel">
+										<path d="M19.5 10l-1.4-1.4L13 13.8V4h-2v9.8L5.9 8.6 4.5 10 12 17.5z" fill="currentColor" transform="rotate(45 12 12)" />
+										<line x1="5" y1="19" x2="19" y2="19" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
 									</svg>
 								{:else}
 									<span class="channel-icon hash-icon">#</span>
@@ -387,6 +451,30 @@
 	<div class="server-dropdown-overlay" onclick={closeServerDropdown}></div>
 {/if}
 
+{#if showCreateChannel}
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<div class="create-channel-overlay" onclick={closeCreateChannel}>
+		<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+		<div class="create-channel-dialog" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Create or join channel">
+			<div class="create-channel-title">Join / Create Channel</div>
+			<form onsubmit={(e) => { e.preventDefault(); handleCreateChannelSubmit(); }}>
+				<input
+					class="create-channel-input"
+					type="text"
+					bind:value={newChannelName}
+					placeholder="#channel-name"
+					autofocus
+				/>
+				<div class="create-channel-actions">
+					<button type="button" class="create-channel-cancel" onclick={closeCreateChannel}>Cancel</button>
+					<button type="submit" class="create-channel-submit" disabled={!newChannelName.trim()}>Join</button>
+				</div>
+			</form>
+		</div>
+	</div>
+{/if}
+
 <style>
 	.channel-sidebar {
 		display: flex;
@@ -494,6 +582,39 @@
 
 	.category {
 		margin-bottom: 2px;
+	}
+
+	.category-header-row {
+		display: flex;
+		align-items: center;
+	}
+
+	.create-channel-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 18px;
+		height: 18px;
+		margin-right: 4px;
+		padding: 0;
+		background: none;
+		border: none;
+		border-radius: 3px;
+		cursor: pointer;
+		color: var(--text-muted);
+		opacity: 0;
+		flex-shrink: 0;
+		transition: opacity 80ms, color 80ms, background 80ms;
+	}
+
+	.category-header-row:hover .create-channel-btn {
+		opacity: 1;
+	}
+
+	.create-channel-btn:hover {
+		opacity: 1;
+		color: var(--text-primary);
+		background: var(--surface-high);
 	}
 
 	.category-header {
@@ -789,5 +910,93 @@
 		height: 12px;
 		flex-shrink: 0;
 		color: var(--accent-primary);
+	}
+
+	/* Create channel dialog */
+	.create-channel-overlay {
+		position: fixed;
+		inset: 0;
+		z-index: 1100;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: rgba(0, 0, 0, 0.6);
+	}
+
+	.create-channel-dialog {
+		background: var(--surface-high);
+		border-radius: 8px;
+		padding: 20px;
+		width: 320px;
+		max-width: 90vw;
+		box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+	}
+
+	.create-channel-title {
+		font-size: var(--font-md);
+		font-weight: var(--weight-semibold);
+		color: var(--text-primary);
+		margin-bottom: 12px;
+	}
+
+	.create-channel-input {
+		width: 100%;
+		padding: 8px 10px;
+		font-size: var(--font-base);
+		font-family: var(--font-primary);
+		background: var(--surface-low);
+		border: 1px solid var(--surface-highest);
+		border-radius: 4px;
+		color: var(--text-primary);
+		outline: none;
+		box-sizing: border-box;
+	}
+
+	.create-channel-input:focus {
+		border-color: var(--accent-primary);
+	}
+
+	.create-channel-actions {
+		display: flex;
+		justify-content: flex-end;
+		gap: 8px;
+		margin-top: 12px;
+	}
+
+	.create-channel-cancel {
+		padding: 6px 14px;
+		border: none;
+		border-radius: 4px;
+		background: var(--surface-highest);
+		color: var(--text-primary);
+		font-family: var(--font-primary);
+		font-size: var(--font-sm);
+		font-weight: var(--weight-medium);
+		cursor: pointer;
+	}
+
+	.create-channel-cancel:hover {
+		background: var(--surface-low);
+	}
+
+	.create-channel-submit {
+		padding: 6px 14px;
+		border: none;
+		border-radius: 4px;
+		background: var(--accent-primary);
+		color: #fff;
+		font-family: var(--font-primary);
+		font-size: var(--font-sm);
+		font-weight: var(--weight-medium);
+		cursor: pointer;
+	}
+
+	.create-channel-submit:hover:not(:disabled) {
+		filter: brightness(1.1);
+	}
+
+	.create-channel-submit:disabled {
+		opacity: 0.5;
+		cursor: default;
 	}
 </style>

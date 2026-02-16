@@ -148,6 +148,7 @@ export interface ChannelCategory {
 	channels: string[];
 	collapsed: boolean;
 	voice?: boolean;
+	isReadonly?: boolean;
 }
 
 export interface DMConversation {
@@ -183,12 +184,13 @@ export function getActiveChannel(): string | null {
 /**
  * Set categories from virc.json. Each category starts expanded.
  */
-export function setCategories(cats: Array<{ name: string; channels: string[]; voice?: boolean }>): void {
+export function setCategories(cats: Array<{ name: string; channels: string[]; voice?: boolean; readonly?: boolean }>): void {
 	channelUIState.categories = cats.map((c) => ({
 		name: c.name,
 		channels: c.channels,
 		collapsed: false,
 		voice: c.voice,
+		isReadonly: c.readonly,
 	}));
 }
 

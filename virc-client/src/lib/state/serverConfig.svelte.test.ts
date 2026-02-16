@@ -58,6 +58,23 @@ describe('serverConfig state', () => {
 		expect(serverConfig.config?.description).toBe('Updated');
 	});
 
+	it('stores readonly category flag from virc.json', () => {
+		const config: VircConfig = {
+			name: 'Info Server',
+			channels: {
+				categories: [
+					{ name: 'Text', channels: ['#general'] },
+					{ name: 'Info', channels: ['#rules', '#welcome'], readonly: true },
+				],
+			},
+		};
+		setServerConfig(config);
+		const cats = serverConfig.config?.channels?.categories;
+		expect(cats).toHaveLength(2);
+		expect(cats?.[0].readonly).toBeUndefined();
+		expect(cats?.[1].readonly).toBe(true);
+	});
+
 	it('stores roles field from virc.json', () => {
 		const config: VircConfig = {
 			name: 'Roles Server',

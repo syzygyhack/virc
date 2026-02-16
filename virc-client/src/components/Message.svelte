@@ -19,6 +19,10 @@
 		onreact?: (msgid: string) => void;
 		onmore?: (msgid: string, event: MouseEvent) => void;
 		onpin?: (msgid: string) => void;
+		onedit?: (msgid: string) => void;
+		oncopytext?: (text: string) => void;
+		oncopylink?: (msgid: string) => void;
+		onmarkunread?: (msgid: string) => void;
 		ontogglereaction?: (msgid: string, emoji: string) => void;
 		onscrolltomessage?: (msgid: string) => void;
 		onretry?: (msgid: string) => void;
@@ -35,6 +39,10 @@
 		onreact,
 		onmore,
 		onpin,
+		onedit,
+		oncopytext,
+		oncopylink,
+		onmarkunread,
 		ontogglereaction,
 		onscrolltomessage,
 		onretry,
@@ -45,6 +53,8 @@
 	let isSending = $derived(message.sendState === 'sending');
 	/** Messages with local-only msgids can't be redacted on the server. */
 	let canDelete = $derived(!message.msgid.startsWith('_local_'));
+	/** Whether this message was sent by the current user. */
+	let isOwnMessage = $derived(message.account === (userState.account ?? ''));
 	let devTooltip = $derived(appSettings.developerMode ? `msgid: ${message.msgid}` : undefined);
 
 	function handleRetry() {
@@ -239,6 +249,26 @@
 		}
 	}
 
+	function handleEdit() {
+		onedit?.(message.msgid);
+		moreMenuOpen = false;
+	}
+
+	function handleCopyText() {
+		oncopytext?.(message.text);
+		moreMenuOpen = false;
+	}
+
+	function handleCopyLink() {
+		oncopylink?.(message.msgid);
+		moreMenuOpen = false;
+	}
+
+	function handleMarkUnread() {
+		onmarkunread?.(message.msgid);
+		moreMenuOpen = false;
+	}
+
 	/** Open profile popout when clicking a nick in a message. */
 	function handleNickClick(event: MouseEvent) {
 		onnickclick?.(message.nick, message.account, event);
@@ -282,6 +312,20 @@
 				{#if moreMenuOpen}
 					<!-- svelte-ignore a11y_no_static_element_interactions -->
 					<div class="more-menu">
+						{#if isOwnMessage}
+							<button class="more-menu-item" onclick={handleEdit}>
+								Edit Message
+							</button>
+						{/if}
+						<button class="more-menu-item" onclick={handleCopyText}>
+							Copy Text
+						</button>
+						<button class="more-menu-item" onclick={handleCopyLink}>
+							Copy Link
+						</button>
+						<button class="more-menu-item" onclick={handleMarkUnread}>
+							Mark Unread
+						</button>
 						{#if isOp}
 							<button class="more-menu-item" onclick={handlePin}>
 								{pinned ? 'Unpin Message' : 'Pin Message'}
@@ -459,6 +503,20 @@
 				{#if moreMenuOpen}
 					<!-- svelte-ignore a11y_no_static_element_interactions -->
 					<div class="more-menu">
+						{#if isOwnMessage}
+							<button class="more-menu-item" onclick={handleEdit}>
+								Edit Message
+							</button>
+						{/if}
+						<button class="more-menu-item" onclick={handleCopyText}>
+							Copy Text
+						</button>
+						<button class="more-menu-item" onclick={handleCopyLink}>
+							Copy Link
+						</button>
+						<button class="more-menu-item" onclick={handleMarkUnread}>
+							Mark Unread
+						</button>
 						{#if isOp}
 							<button class="more-menu-item" onclick={handlePin}>
 								{pinned ? 'Unpin Message' : 'Pin Message'}

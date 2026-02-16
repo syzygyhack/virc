@@ -1047,6 +1047,47 @@
 		editingChannel = null;
 	}
 
+	/** Edit a specific message by msgid (from More menu). */
+	function handleEditMessage(msgid: string): void {
+		const channel = channelUIState.activeChannel;
+		if (!channel) return;
+		const msg = getMessage(channel, msgid);
+		if (!msg || msg.isRedacted) return;
+
+		editingMsgid = msg.msgid;
+		editingChannel = channel;
+		window.dispatchEvent(
+			new CustomEvent('virc:edit-message', { detail: { text: msg.text } })
+		);
+	}
+
+	/** Copy message text to clipboard. */
+	function handleCopyText(text: string): void {
+		navigator.clipboard.writeText(text).catch(() => {
+			// Fallback: ignore clipboard errors silently
+		});
+	}
+
+	/** Copy a permalink-style reference to clipboard. */
+	function handleCopyLink(msgid: string): void {
+		const channel = channelUIState.activeChannel;
+		if (!channel) return;
+		const server = getActiveServer();
+		const serverName = server?.name ?? 'irc';
+		const link = `${serverName}/${channel}/${msgid}`;
+		navigator.clipboard.writeText(link).catch(() => {});
+	}
+
+	/** Set read marker to a specific message (Mark Unread). */
+	function handleMarkUnread(msgid: string): void {
+		const channel = channelUIState.activeChannel;
+		if (!channel || !conn) return;
+		const msg = getMessage(channel, msgid);
+		if (!msg) return;
+		// Set read marker to this message's timestamp via MARKREAD
+		markread(conn, channel, msg.time.toISOString());
+	}
+
 	/** Scroll to a specific message in the message list (used by pinned messages). */
 	function handleScrollToMessage(msgid: string): void {
 		window.dispatchEvent(
@@ -1488,6 +1529,10 @@
 						onreact={handleReact}
 						onmore={handleMore}
 						onpin={handlePin}
+						onedit={handleEditMessage}
+						oncopytext={handleCopyText}
+						oncopylink={handleCopyLink}
+						onmarkunread={handleMarkUnread}
 						ontogglereaction={handleToggleReaction}
 						onretry={handleRetry}
 						onnickclick={handleNickClick}

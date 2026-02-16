@@ -11,6 +11,8 @@ export function setupEnv() {
   process.env.LIVEKIT_API_KEY = TEST_LIVEKIT_API_KEY;
   process.env.LIVEKIT_API_SECRET = TEST_LIVEKIT_API_SECRET;
   process.env.ERGO_API = TEST_ERGO_API;
+  process.env.ERGO_API_TOKEN = "test-ergo-api-token";
+  process.env.SERVER_ID = "virc.local";
   process.env.PORT = "0"; // won't bind
 }
 
@@ -19,19 +21,19 @@ const secret = new TextEncoder().encode(TEST_JWT_SECRET);
 /** Create a valid JWT matching the shape produced by the auth endpoint. */
 export async function createTestJwt(
   sub = "testuser",
-  opts?: { expired?: boolean },
+  opts?: { expired?: boolean; srv?: string },
 ): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
   const exp = opts?.expired ? now - 3600 : now + 3600;
+  const srv = opts?.srv ?? process.env.SERVER_ID ?? "virc.local";
 
-  return new SignJWT({
-    sub,
-    iss: "virc-files",
-    iat: now,
-    exp,
-    srv: "virc.local",
-  })
+  return new SignJWT({ srv })
     .setProtectedHeader({ alg: "HS256" })
+    .setIssuer("virc-files")
+    .setSubject(sub)
+    .setIssuedAt(now)
+    .setExpirationTime(exp)
+    .setAudience("virc-files")
     .sign(secret);
 }
 

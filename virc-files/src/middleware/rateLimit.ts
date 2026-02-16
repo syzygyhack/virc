@@ -41,9 +41,13 @@ export function rateLimit(opts: RateLimitOptions) {
   return async (c: Context, next: Next) => {
     // Use rightmost X-Forwarded-For entry (set by trusted reverse proxy).
     // The leftmost entries are client-controlled and spoofable.
+    // Falls back to the raw socket address when no proxy header is present.
     const forwarded = c.req.header("X-Forwarded-For");
     const parts = forwarded?.split(",");
-    const ip = parts?.[parts.length - 1]?.trim() || "unknown";
+    const ip = parts?.[parts.length - 1]?.trim()
+      || c.req.header("X-Real-IP")
+      || (c.env?.remoteAddr as string | undefined)
+      || "unknown";
 
     const now = Date.now();
 

@@ -73,6 +73,15 @@ describe("authMiddleware", () => {
     expect(body.srv).toBe("virc.local");
   });
 
+  test("rejects token issued for a different server", async () => {
+    const app = createTestApp();
+    const token = await createTestJwt("alice", { srv: "other.example.com" });
+    const res = await app.fetch(req("/protected/resource", {
+      headers: { Authorization: `Bearer ${token}` },
+    }));
+    expect(res.status).toBe(401);
+  });
+
   test("sets correct user sub from token", async () => {
     const app = createTestApp();
     const token = await createTestJwt("bob");

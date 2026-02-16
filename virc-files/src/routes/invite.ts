@@ -23,6 +23,7 @@ interface Invite {
 export class InviteStore {
   private invites: Invite[] = [];
   private filePath: string;
+  private writeQueue: Promise<void> = Promise.resolve();
 
   constructor(dataDir: string) {
     this.filePath = join(dataDir, "invites.json");
@@ -38,8 +39,16 @@ export class InviteStore {
     }
   }
 
-  /** Persist invites to disk using atomic write (write tmp + rename). */
+  /** Persist invites to disk using atomic write (write tmp + rename).
+   *  Serialized via writeQueue to prevent concurrent writes from racing. */
   async save(): Promise<void> {
+    this.writeQueue = this.writeQueue.then(() => this._doSave()).catch((err) => {
+      console.error("[virc] InviteStore save failed:", err);
+    });
+    await this.writeQueue;
+  }
+
+  private async _doSave(): Promise<void> {
     const dir = dirname(this.filePath);
     await mkdir(dir, { recursive: true });
     const tmp = this.filePath + ".tmp";
@@ -181,7 +190,7 @@ export function createInviteRouter(dataDir?: string) {
 
     const invite: Invite = {
       token,
-      server: user.srv,
+      server: env.SERVER_ID,
       channel: body.channel,
       createdBy: user.sub,
       expiresAt,
@@ -192,10 +201,22 @@ export function createInviteRouter(dataDir?: string) {
     store.add(invite);
     await store.save();
 
+    // Use BASE_URL env var if set (trusted). Falling back to request headers is
+    // unsafe (attacker-controlled Host header can craft phishing links), so we
+    // only return the token when BASE_URL is not configured.
+    const baseUrl = env.BASE_URL;
+    let inviteUrl: string;
+    if (baseUrl) {
+      inviteUrl = `${baseUrl.replace(/\/+$/, '')}/join/${encodeURIComponent(invite.server)}/${token}`;
+    } else {
+      // No BASE_URL — return token only; client constructs URL from its own origin
+      inviteUrl = `/join/${encodeURIComponent(invite.server)}/${token}`;
+    }
+
     return c.json(
       {
         token,
-        url: `https://virc.app/join/${invite.server}/${token}`,
+        url: inviteUrl,
         channel: invite.channel,
         expiresAt: invite.expiresAt,
         maxUses: invite.maxUses,
@@ -223,7 +244,33 @@ export function createInviteRouter(dataDir?: string) {
       return c.json({ error: "Invite has reached maximum uses" }, 410);
     }
 
-    // Increment use count
+    // GET is idempotent — just return invite info without consuming a use.
+    // Use count is incremented when the client actually joins via POST /api/invite/:token/redeem.
+    return c.json({
+      channel: invite.channel,
+      server: invite.server,
+    });
+  });
+
+  // POST /api/invite/:token/redeem — consume an invite use (auth required)
+  router.post("/api/invite/:token/redeem", authMiddleware, async (c) => {
+    await ensureLoaded();
+
+    const token = c.req.param("token");
+    const invite = store.findByToken(token);
+
+    if (!invite) {
+      return c.json({ error: "Invite not found" }, 404);
+    }
+
+    if (isExpired(invite)) {
+      return c.json({ error: "Invite has expired" }, 410);
+    }
+
+    if (isMaxUsesReached(invite)) {
+      return c.json({ error: "Invite has reached maximum uses" }, 410);
+    }
+
     invite.useCount++;
     await store.save();
 

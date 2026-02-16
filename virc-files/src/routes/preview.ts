@@ -1,10 +1,11 @@
 import { Hono } from "hono";
-import { resolve as defaultDnsResolve } from "node:dns/promises";
+import { resolve4 as defaultResolve4, resolve6 as defaultResolve6 } from "node:dns/promises";
 import { authMiddleware } from "../middleware/auth.js";
 import type { AppEnv } from "../types.js";
 
-/** DNS resolver function — replaceable for testing. */
-let dnsResolver: (hostname: string) => Promise<string[]> = defaultDnsResolve;
+/** DNS resolver functions — replaceable for testing. */
+let dnsResolve4: (hostname: string) => Promise<string[]> = defaultResolve4;
+let dnsResolve6: (hostname: string) => Promise<string[]> = defaultResolve6;
 
 const preview = new Hono<AppEnv>();
 
@@ -173,10 +174,18 @@ async function assertPublicResolution(hostname: string): Promise<void> {
     return;
   }
 
-  let addresses: string[];
-  try {
-    addresses = await dnsResolver(hostname);
-  } catch {
+  // Resolve both A (IPv4) and AAAA (IPv6) records to prevent bypasses
+  // via hostnames that only have AAAA records pointing to private IPv6.
+  const [v4Result, v6Result] = await Promise.allSettled([
+    dnsResolve4(hostname),
+    dnsResolve6(hostname),
+  ]);
+
+  const v4Addrs = v4Result.status === "fulfilled" ? v4Result.value : [];
+  const v6Addrs = v6Result.status === "fulfilled" ? v6Result.value : [];
+  const addresses = [...v4Addrs, ...v6Addrs];
+
+  if (addresses.length === 0) {
     throw new Error(`DNS resolution failed for ${hostname}`);
   }
 
@@ -199,13 +208,24 @@ async function assertPublicResolution(hostname: string): Promise<void> {
 /** Extract OG meta tags from HTML string. */
 function parseOgTags(html: string): Omit<OgMetadata, "url"> {
   const get = (property: string): string | null => {
-    // Match <meta property="og:..." content="..."> or <meta content="..." property="og:...">
-    const pattern = new RegExp(
-      `<meta\\s+[^>]*(?:property=["']${property}["'][^>]*content=["']([^"']*)["']|content=["']([^"']*)["'][^>]*property=["']${property}["'])`,
-      "i",
-    );
-    const match = html.match(pattern);
-    return match?.[1] ?? match?.[2] ?? null;
+    // Match <meta property="og:..." content="..."> in either attribute order.
+    // Uses separate patterns for double-quoted and single-quoted values to
+    // correctly handle content that contains the other quote character.
+    const patterns = [
+      // property before content, double quotes
+      new RegExp(`<meta\\s+[^>]*property\\s*=\\s*["']${property}["'][^>]*content\\s*=\\s*"([^"]*)"`, "i"),
+      // property before content, single quotes
+      new RegExp(`<meta\\s+[^>]*property\\s*=\\s*["']${property}["'][^>]*content\\s*=\\s*'([^']*)'`, "i"),
+      // content before property, double quotes
+      new RegExp(`<meta\\s+[^>]*content\\s*=\\s*"([^"]*)"[^>]*property\\s*=\\s*["']${property}["']`, "i"),
+      // content before property, single quotes
+      new RegExp(`<meta\\s+[^>]*content\\s*=\\s*'([^']*)'[^>]*property\\s*=\\s*["']${property}["']`, "i"),
+    ];
+    for (const pattern of patterns) {
+      const match = html.match(pattern);
+      if (match?.[1] != null) return match[1];
+    }
+    return null;
   };
 
   return {
@@ -328,14 +348,16 @@ preview.get("/api/preview", authMiddleware, async (c) => {
   }
 });
 
-/** Override the DNS resolver (for testing). */
+/** Override the DNS resolvers (for testing). The resolver receives a hostname and returns IPs. */
 function setDnsResolver(resolver: (hostname: string) => Promise<string[]>): void {
-  dnsResolver = resolver;
+  dnsResolve4 = resolver;
+  dnsResolve6 = resolver;
 }
 
-/** Reset the DNS resolver to the default (for testing). */
+/** Reset the DNS resolvers to the defaults (for testing). */
 function resetDnsResolver(): void {
-  dnsResolver = defaultDnsResolve;
+  dnsResolve4 = defaultResolve4;
+  dnsResolve6 = defaultResolve6;
 }
 
 export { preview, cache, validateUrl, parseOgTags, isPrivateHost, assertPublicResolution, setDnsResolver, resetDnsResolver };

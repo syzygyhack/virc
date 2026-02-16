@@ -2,9 +2,13 @@ import type { Context, Next } from "hono";
 import { jwtVerify } from "jose";
 import { env } from "../env.js";
 
+const JWT_ISSUER = "virc-files";
+const JWT_AUDIENCE = "virc-files";
+
 export interface JwtPayload {
   sub: string;
   iss: string;
+  aud?: string | string[];
   iat: number;
   exp: number;
   srv: string;
@@ -21,8 +25,22 @@ export async function authMiddleware(c: Context, next: Next) {
   try {
     const secret = new TextEncoder().encode(env.JWT_SECRET);
     const { payload } = await jwtVerify(token, secret, {
-      issuer: "virc-files",
+      issuer: JWT_ISSUER,
+      audience: JWT_AUDIENCE,
+      algorithms: ["HS256"],
     });
+
+    // Validate required claims — jose checks signature/expiry but not shape
+    if (typeof payload.sub !== "string" || !payload.sub) {
+      return c.json({ error: "Invalid token: missing subject" }, 401);
+    }
+    if (typeof payload.srv !== "string" || !payload.srv) {
+      return c.json({ error: "Invalid token: missing server" }, 401);
+    }
+
+    if (payload.srv !== env.SERVER_ID) {
+      return c.json({ error: "Invalid token: wrong server" }, 401);
+    }
 
     c.set("user", payload as unknown as JwtPayload);
     await next();

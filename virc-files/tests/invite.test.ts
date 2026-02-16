@@ -46,6 +46,20 @@ async function getInvite(token: string): Promise<Response> {
   return invite.fetch(req(`/api/invite/${token}`));
 }
 
+/** Helper to POST to redeem an invite (auth required). */
+async function redeemInvite(
+  token: string,
+  opts?: { jwt?: string },
+): Promise<Response> {
+  const jwt = opts?.jwt ?? (await createTestJwt("admin"));
+  return invite.fetch(
+    req(`/api/invite/${token}/redeem`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${jwt}` },
+    }),
+  );
+}
+
 /** Helper to DELETE an invite token (auth required). */
 async function deleteInvite(
   token: string,
@@ -160,14 +174,26 @@ describe("GET /api/invite/:token", () => {
     expect(body.server).toBeTruthy();
   });
 
-  test("increments use count on valid GET", async () => {
+  test("does not increment use count on GET (idempotent)", async () => {
     const createRes = await createInvite({ channel: "#general" });
     const { token } = (await createRes.json()) as { token: string };
 
     await getInvite(token);
     await getInvite(token);
 
-    // Read store directly to check useCount
+    // GET should not consume uses
+    const invites = store.getAll();
+    const inv = invites.find((i) => i.token === token);
+    expect(inv?.useCount).toBe(0);
+  });
+
+  test("increments use count on POST redeem", async () => {
+    const createRes = await createInvite({ channel: "#general" });
+    const { token } = (await createRes.json()) as { token: string };
+
+    await redeemInvite(token);
+    await redeemInvite(token);
+
     const invites = store.getAll();
     const inv = invites.find((i) => i.token === token);
     expect(inv?.useCount).toBe(2);
@@ -195,24 +221,28 @@ describe("GET /api/invite/:token", () => {
     expect(body.error).toContain("expired");
   });
 
-  test("returns 410 when max uses reached", async () => {
+  test("returns 410 when max uses reached (via redeem)", async () => {
     const createRes = await createInvite({
       channel: "#general",
       maxUses: 2,
     });
     const { token } = (await createRes.json()) as { token: string };
 
-    // Use it twice
-    const r1 = await getInvite(token);
+    // Redeem twice (consumes uses)
+    const r1 = await redeemInvite(token);
     expect(r1.status).toBe(200);
-    const r2 = await getInvite(token);
+    const r2 = await redeemInvite(token);
     expect(r2.status).toBe(200);
 
-    // Third time should fail
+    // GET should report exhausted
     const r3 = await getInvite(token);
     expect(r3.status).toBe(410);
     const body = (await r3.json()) as { error: string };
     expect(body.error).toContain("uses");
+
+    // Redeem should also fail
+    const r4 = await redeemInvite(token);
+    expect(r4.status).toBe(410);
   });
 
   test("unlimited uses when maxUses is 0", async () => {

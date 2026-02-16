@@ -21,6 +21,17 @@ files.post("/api/upload", authMiddleware, async (c) => {
     return c.json({ error: "Content-Type must be multipart/form-data" }, 400);
   }
 
+  // Early rejection: check Content-Length before parsing the full body.
+  // If present and oversized, reject immediately. If absent (chunked), we
+  // still parse but rely on the post-parse file.size check below.
+  const clHeader = c.req.header("Content-Length");
+  if (clHeader) {
+    const contentLength = parseInt(clHeader, 10);
+    if (!Number.isNaN(contentLength) && contentLength > env.MAX_FILE_SIZE * 1.1) {
+      return c.json({ error: "File too large" }, 413);
+    }
+  }
+
   const body = await c.req.parseBody();
   const file = body["file"];
 
@@ -92,10 +103,13 @@ files.get("/api/files/:filename", async (c) => {
     "Content-Type": mimeType,
     "Cache-Control": "public, max-age=31536000, immutable",
     "X-Content-Type-Options": "nosniff",
+    "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'",
   };
 
   if (forceDownload) {
-    headers["Content-Disposition"] = `attachment; filename="${filename}"`;
+    // Sanitize filename for Content-Disposition: escape quotes and backslashes
+    const safeName = filename.replace(/[\\"]/g, "_");
+    headers["Content-Disposition"] = `attachment; filename="${safeName}"`;
   }
 
   return new Response(file, { headers });
@@ -110,10 +124,24 @@ const UNSAFE_EXTENSIONS = new Set([
   ".html",
   ".htm",
   ".xhtml",
+  ".xht",
+  ".shtml",
   ".xml",
+  ".xsl",
+  ".xslt",
   ".js",
   ".mjs",
+  ".cjs",
   ".css",
+  ".jsp",
+  ".asp",
+  ".aspx",
+  ".php",
+  ".cgi",
+  ".pl",
+  ".py",
+  ".rb",
+  ".swf",
 ]);
 
 /** Map common extensions to MIME types. */

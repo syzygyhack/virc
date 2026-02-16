@@ -15,16 +15,24 @@ const { router: invite } = createInviteRouter();
 
 app.use("*", logger());
 
-// CORS middleware — restrict to configured origin
-if (env.ALLOWED_ORIGIN) {
-  app.use("*", cors({ origin: env.ALLOWED_ORIGIN }));
-}
+// CORS middleware — always applied. When ALLOWED_ORIGIN is set, only that
+// origin is permitted. When unset, all cross-origin requests are rejected
+// (no Access-Control-Allow-Origin header is sent).
+const allowedOrigins = env.ALLOWED_ORIGINS;
+app.use("*", cors({
+  origin: allowedOrigins.length > 0
+    ? (origin) => (allowedOrigins.includes(origin) ? origin : "")
+    : () => "",  // empty string = browser rejects cross-origin response
+}));
 
 // Rate limiting on sensitive endpoints (configurable via env)
 app.use("/api/auth", rateLimit({ max: env.RATE_LIMIT_AUTH_MAX, windowMs: env.RATE_LIMIT_AUTH_WINDOW }));
 app.use("/api/preview", rateLimit({ max: env.RATE_LIMIT_PREVIEW_MAX, windowMs: env.RATE_LIMIT_WINDOW }));
 app.use("/api/upload", rateLimit({ max: env.RATE_LIMIT_UPLOAD_MAX, windowMs: env.RATE_LIMIT_WINDOW }));
 app.use("/api/invite", rateLimit({ max: env.RATE_LIMIT_INVITE_MAX, windowMs: env.RATE_LIMIT_WINDOW }));
+app.use("/api/livekit/*", rateLimit({ max: 20, windowMs: env.RATE_LIMIT_WINDOW }));
+// File downloads: generous limit to allow page loads with many embeds
+app.use("/api/files/*", rateLimit({ max: 100, windowMs: env.RATE_LIMIT_WINDOW }));
 
 // Global error handler — prevents stack trace leaks to clients (CR-027)
 app.onError((err, c) => {

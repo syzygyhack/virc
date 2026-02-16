@@ -90,4 +90,40 @@ describe('serverConfig state', () => {
 		expect(serverConfig.config?.roles?.['@']?.color).toBe('#50a0e0');
 		expect(serverConfig.config?.roles?.['+']?.color).toBeNull();
 	});
+
+	it('stores theme field with accent and surfaces', () => {
+		const config: VircConfig = {
+			name: 'Themed Server',
+			theme: {
+				accent: '#e05050',
+				surfaces: {
+					lowest: '#1a1015',
+					low: '#201520',
+					base: '#281a28',
+				},
+			},
+		};
+		setServerConfig(config);
+		expect(serverConfig.config?.theme).toBeDefined();
+		expect(serverConfig.config?.theme?.accent).toBe('#e05050');
+		expect(serverConfig.config?.theme?.surfaces?.lowest).toBe('#1a1015');
+		expect(serverConfig.config?.theme?.surfaces?.low).toBe('#201520');
+		expect(serverConfig.config?.theme?.surfaces?.base).toBe('#281a28');
+	});
+
+	it('stores theme with accent only', () => {
+		const config: VircConfig = {
+			name: 'Accent Server',
+			theme: { accent: '#ff6600' },
+		};
+		setServerConfig(config);
+		expect(serverConfig.config?.theme?.accent).toBe('#ff6600');
+		expect(serverConfig.config?.theme?.surfaces).toBeUndefined();
+	});
+
+	it('config without theme has undefined theme', () => {
+		const config: VircConfig = { name: 'No Theme' };
+		setServerConfig(config);
+		expect(serverConfig.config?.theme).toBeUndefined();
+	});
 });

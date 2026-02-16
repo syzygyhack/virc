@@ -7,6 +7,7 @@
 	import { getToken } from '$lib/api/auth';
 	import { listInvites, createInvite, deleteInvite, type InviteSummary } from '$lib/api/invites';
 	import { formatMessage } from '$lib/irc/parser';
+	import { themeState, parseServerTheme } from '$lib/state/theme.svelte';
 	import type { IRCConnection } from '$lib/irc/connection';
 
 	/** Default role definitions matching virc-files defaults. */
@@ -21,22 +22,26 @@
 	/** Mode prefix display order (highest to lowest). */
 	const MODE_ORDER = ['~', '&', '@', '%', '+'] as const;
 
+	type TabId = 'overview' | 'channels' | 'roles' | 'members' | 'invites' | 'appearance' | 'moderation';
+
 	interface Props {
 		onclose: () => void;
 		connection: IRCConnection | null;
-		initialTab?: 'overview' | 'channels' | 'roles' | 'members' | 'invites';
+		initialTab?: TabId;
 	}
 
 	let { onclose, connection, initialTab = 'overview' }: Props = $props();
 
-	let activeTab: 'overview' | 'channels' | 'roles' | 'members' | 'invites' = $state(initialTab);
+	let activeTab: TabId = $state(initialTab);
 
-	const TAB_TITLES: Record<typeof activeTab, string> = {
+	const TAB_TITLES: Record<TabId, string> = {
 		overview: 'Overview',
 		channels: 'Channels',
 		roles: 'Roles',
 		members: 'Members',
 		invites: 'Invites',
+		appearance: 'Appearance',
+		moderation: 'Moderation',
 	};
 
 	let tabTitle = $derived(TAB_TITLES[activeTab]);
@@ -77,6 +82,51 @@
 			}
 		}
 		return result.sort();
+	});
+
+	// --- Appearance tab ---
+
+	/** Theme overrides parsed from virc.json config. */
+	const themeOverrides = $derived.by((): Record<string, string> => {
+		const theme = config?.theme;
+		if (!theme) return {};
+		return parseServerTheme(theme);
+	});
+
+	/** Whether any server theme overrides are active. */
+	const hasThemeOverrides = $derived(Object.keys(themeOverrides).length > 0);
+
+	/** Currently applied server overrides (may differ from config if user disabled them). */
+	const appliedOverrides = $derived(themeState.serverOverrides);
+
+	// --- Moderation tab ---
+
+	/** Slow mode state per channel (UI-only for now, maps to IRC MODE +d). */
+	let slowModeEnabled: Record<string, boolean> = $state({});
+
+	function toggleSlowMode(channel: string): void {
+		if (!connection) return;
+		const enabled = !slowModeEnabled[channel];
+		slowModeEnabled[channel] = enabled;
+		// Send IRC MODE for rate limiting: +d <seconds> enables, -d disables
+		if (enabled) {
+			connection.send(formatMessage('MODE', channel, '+d', '5'));
+		} else {
+			connection.send(formatMessage('MODE', channel, '-d'));
+		}
+	}
+
+	/** Get all channels from config for moderation display. */
+	const allChannels = $derived.by((): string[] => {
+		const channels = new Set<string>();
+		if (config?.channels?.categories) {
+			for (const cat of config.channels.categories) {
+				for (const ch of cat.channels) {
+					channels.add(ch);
+				}
+			}
+		}
+		return [...channels].sort();
 	});
 
 	// --- Members tab ---
@@ -216,8 +266,12 @@
 				<button class="nav-item" class:active={activeTab === 'invites'} onclick={() => activeTab = 'invites'}>
 					Invites
 				</button>
-				<button class="nav-item disabled" disabled>Appearance</button>
-				<button class="nav-item disabled" disabled>Moderation</button>
+				<button class="nav-item" class:active={activeTab === 'appearance'} onclick={() => activeTab = 'appearance'}>
+					Appearance
+				</button>
+				<button class="nav-item" class:active={activeTab === 'moderation'} onclick={() => activeTab = 'moderation'}>
+					Moderation
+				</button>
 			</div>
 		</nav>
 
@@ -445,6 +499,107 @@
 							{/if}
 						{/if}
 					</div>
+
+				{:else if activeTab === 'appearance'}
+					<div class="appearance-section">
+						<p class="section-description">
+							Server theme overrides from the virc.json configuration. These are CSS variable values that layer on top of your current theme.
+						</p>
+
+						{#if hasThemeOverrides}
+							<div class="theme-overrides-list">
+								<div class="overrides-header">
+									<span class="field-label">Configured Overrides</span>
+								</div>
+								{#each Object.entries(themeOverrides) as [variable, value] (variable)}
+									<div class="theme-override-row">
+										<span class="override-var">{variable}</span>
+										<div class="override-value-group">
+											<span class="override-swatch" style:background={value}></span>
+											<span class="override-value">{value}</span>
+										</div>
+									</div>
+								{/each}
+							</div>
+
+							<div class="theme-preview">
+								<span class="field-label">Preview</span>
+								<div class="preview-card" style:--preview-accent={themeOverrides['--accent-primary'] ?? 'var(--accent-primary)'} style:--preview-surface-lowest={themeOverrides['--surface-lowest'] ?? 'var(--surface-lowest)'} style:--preview-surface-low={themeOverrides['--surface-low'] ?? 'var(--surface-low)'} style:--preview-surface-base={themeOverrides['--surface-base'] ?? 'var(--surface-base)'} style:--preview-surface-high={themeOverrides['--surface-high'] ?? 'var(--surface-high)'} style:--preview-surface-highest={themeOverrides['--surface-highest'] ?? 'var(--surface-highest)'}>
+									<div class="preview-sidebar" style:background="var(--preview-surface-low)">
+										<div class="preview-channel" style:background="var(--preview-accent)"></div>
+										<div class="preview-channel-muted"></div>
+										<div class="preview-channel-muted"></div>
+									</div>
+									<div class="preview-main" style:background="var(--preview-surface-base)">
+										<div class="preview-message"></div>
+										<div class="preview-message short"></div>
+										<div class="preview-message"></div>
+										<div class="preview-input" style:background="var(--preview-surface-high)"></div>
+									</div>
+								</div>
+							</div>
+
+							{#if Object.keys(appliedOverrides).length > 0}
+								<p class="hint-text">These overrides are currently applied to your theme.</p>
+							{:else}
+								<p class="hint-text">These overrides are configured but not currently applied.</p>
+							{/if}
+						{:else}
+							<p class="hint-text">This server has no theme overrides configured in virc.json.</p>
+						{/if}
+
+						<p class="hint-text">
+							Editing theme overrides requires access to the virc-files API and will be available in a future update.
+						</p>
+					</div>
+
+				{:else if activeTab === 'moderation'}
+					<div class="moderation-section">
+						<p class="section-description">
+							Channel moderation controls. Slow mode limits how often users can send messages.
+						</p>
+
+						<div class="mod-subsection">
+							<span class="field-label">Slow Mode</span>
+							{#if allChannels.length > 0}
+								<div class="slow-mode-list">
+									{#each allChannels as channel (channel)}
+										<div class="slow-mode-row">
+											<span class="slow-mode-channel">{channel}</span>
+											<button
+												class="slow-mode-toggle"
+												class:enabled={slowModeEnabled[channel]}
+												onclick={() => toggleSlowMode(channel)}
+												disabled={!connection || !isOp}
+												title={!isOp ? 'Requires operator privileges' : slowModeEnabled[channel] ? 'Disable slow mode' : 'Enable slow mode (5s cooldown)'}
+											>
+												{slowModeEnabled[channel] ? 'On' : 'Off'}
+											</button>
+										</div>
+									{/each}
+								</div>
+							{:else}
+								<p class="hint-text">No channels configured.</p>
+							{/if}
+							{#if !isOp}
+								<p class="hint-text">Slow mode controls require operator (@) privileges or higher.</p>
+							{/if}
+						</div>
+
+						<div class="mod-subsection">
+							<span class="field-label">Auto-Mod Rules</span>
+							<p class="hint-text">
+								Auto-moderation rules (message filtering, spam detection) will be available in a future update.
+							</p>
+						</div>
+
+						<div class="mod-subsection">
+							<span class="field-label">Banned Words</span>
+							<p class="hint-text">
+								Banned word lists will be available in a future update.
+							</p>
+						</div>
+					</div>
 				{/if}
 			</div>
 		</div>
@@ -523,17 +678,6 @@
 		background: var(--accent-bg);
 		color: var(--text-primary);
 		font-weight: var(--weight-medium);
-	}
-
-	.nav-item.disabled {
-		color: var(--text-muted);
-		cursor: default;
-		opacity: 0.5;
-	}
-
-	.nav-item.disabled:hover {
-		background: none;
-		color: var(--text-muted);
 	}
 
 	.nav-divider {
@@ -1019,6 +1163,186 @@
 	.delete-btn:hover:not(:disabled) {
 		background: var(--status-error, #e05050);
 		color: #fff;
+	}
+
+	/* ---- Appearance Tab ---- */
+
+	.appearance-section {
+		display: flex;
+		flex-direction: column;
+		gap: 16px;
+	}
+
+	.theme-overrides-list {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+
+	.overrides-header {
+		padding: 4px 0 8px;
+	}
+
+	.theme-override-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 8px 12px;
+		background: var(--surface-low);
+		border-radius: 4px;
+	}
+
+	.override-var {
+		font-family: var(--font-mono, monospace);
+		font-size: var(--font-sm);
+		color: var(--text-secondary);
+	}
+
+	.override-value-group {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.override-swatch {
+		width: 16px;
+		height: 16px;
+		border-radius: 3px;
+		border: 1px solid var(--surface-highest);
+		flex-shrink: 0;
+	}
+
+	.override-value {
+		font-family: var(--font-mono, monospace);
+		font-size: var(--font-sm);
+		color: var(--text-primary);
+	}
+
+	.theme-preview {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+
+	.preview-card {
+		display: flex;
+		border-radius: 8px;
+		overflow: hidden;
+		height: 120px;
+		border: 1px solid var(--surface-highest);
+	}
+
+	.preview-sidebar {
+		width: 60px;
+		padding: 8px;
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+
+	.preview-channel {
+		height: 8px;
+		border-radius: 3px;
+		opacity: 0.8;
+	}
+
+	.preview-channel-muted {
+		height: 8px;
+		border-radius: 3px;
+		background: var(--text-muted);
+		opacity: 0.2;
+	}
+
+	.preview-main {
+		flex: 1;
+		padding: 8px 12px;
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+
+	.preview-message {
+		height: 8px;
+		background: var(--text-muted);
+		opacity: 0.15;
+		border-radius: 3px;
+		width: 80%;
+	}
+
+	.preview-message.short {
+		width: 50%;
+	}
+
+	.preview-input {
+		margin-top: auto;
+		height: 24px;
+		border-radius: 4px;
+	}
+
+	/* ---- Moderation Tab ---- */
+
+	.moderation-section {
+		display: flex;
+		flex-direction: column;
+		gap: 16px;
+	}
+
+	.mod-subsection {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+
+	.slow-mode-list {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+
+	.slow-mode-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 6px 12px;
+		background: var(--surface-low);
+		border-radius: 4px;
+	}
+
+	.slow-mode-channel {
+		font-size: var(--font-base);
+		color: var(--text-primary);
+	}
+
+	.slow-mode-toggle {
+		padding: 3px 12px;
+		font-size: var(--font-xs);
+		font-family: var(--font-primary);
+		font-weight: var(--weight-medium);
+		border: none;
+		border-radius: 3px;
+		cursor: pointer;
+		background: var(--surface-high);
+		color: var(--text-secondary);
+		transition: background var(--duration-channel), color var(--duration-channel);
+	}
+
+	.slow-mode-toggle:hover:not(:disabled) {
+		background: var(--surface-highest);
+		color: var(--text-primary);
+	}
+
+	.slow-mode-toggle.enabled {
+		background: var(--accent-primary);
+		color: #fff;
+	}
+
+	.slow-mode-toggle.enabled:hover:not(:disabled) {
+		opacity: 0.85;
+	}
+
+	.slow-mode-toggle:disabled {
+		opacity: 0.5;
+		cursor: default;
 	}
 
 	/* ---- Responsive ---- */

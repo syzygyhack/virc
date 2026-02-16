@@ -140,6 +140,58 @@ export function resetChannels(): void {
 }
 
 // ---------------------------------------------------------------------------
+// Channel order persistence (localStorage)
+// ---------------------------------------------------------------------------
+
+const CHANNEL_ORDER_KEY = 'virc:channelOrder';
+
+/** Safe check for localStorage availability (missing in Node/SSR). */
+function hasLocalStorage(): boolean {
+	return typeof localStorage !== 'undefined';
+}
+
+/**
+ * Load saved channel order from localStorage.
+ * Returns a map of category name -> ordered channel list.
+ */
+function loadChannelOrder(): Record<string, string[]> {
+	if (!hasLocalStorage()) return {};
+	try {
+		const stored = localStorage.getItem(CHANNEL_ORDER_KEY);
+		if (stored) {
+			const parsed = JSON.parse(stored);
+			if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+				return parsed;
+			}
+		}
+	} catch {
+		// Corrupt localStorage — ignore
+	}
+	return {};
+}
+
+/** Persist current channel order to localStorage. */
+function saveChannelOrder(): void {
+	if (!hasLocalStorage()) return;
+	try {
+		const order: Record<string, string[]> = {};
+		for (const cat of channelUIState.categories) {
+			order[cat.name] = [...cat.channels];
+		}
+		localStorage.setItem(CHANNEL_ORDER_KEY, JSON.stringify(order));
+	} catch {
+		// Storage full or unavailable — ignore
+	}
+}
+
+/** Clear persisted channel order from localStorage. */
+export function resetChannelOrder(): void {
+	if (hasLocalStorage()) {
+		localStorage.removeItem(CHANNEL_ORDER_KEY);
+	}
+}
+
+// ---------------------------------------------------------------------------
 // UI-level channel state: active channel, categories, DM conversations
 // ---------------------------------------------------------------------------
 
@@ -183,15 +235,30 @@ export function getActiveChannel(): string | null {
 
 /**
  * Set categories from virc.json. Each category starts expanded.
+ * Applies any saved channel order from localStorage.
  */
 export function setCategories(cats: Array<{ name: string; channels: string[]; voice?: boolean; readonly?: boolean }>): void {
-	channelUIState.categories = cats.map((c) => ({
-		name: c.name,
-		channels: c.channels,
-		collapsed: false,
-		voice: c.voice,
-		isReadonly: c.readonly,
-	}));
+	const savedOrder = loadChannelOrder();
+	channelUIState.categories = cats.map((c) => {
+		let channels = c.channels;
+		const saved = savedOrder[c.name];
+		if (saved) {
+			// Use saved order, but only for channels that still exist in the category.
+			// Append any new channels not in the saved order at the end.
+			const savedSet = new Set(saved);
+			const currentSet = new Set(c.channels);
+			const ordered = saved.filter((ch) => currentSet.has(ch));
+			const newChannels = c.channels.filter((ch) => !savedSet.has(ch));
+			channels = [...ordered, ...newChannels];
+		}
+		return {
+			name: c.name,
+			channels,
+			collapsed: false,
+			voice: c.voice,
+			isReadonly: c.readonly,
+		};
+	});
 }
 
 /** Toggle a category's collapsed state. */
@@ -200,6 +267,22 @@ export function toggleCategory(name: string): void {
 	if (cat) {
 		cat.collapsed = !cat.collapsed;
 	}
+}
+
+/**
+ * Reorder a channel within a category by moving it from one index to another.
+ * Persists the new order to localStorage.
+ */
+export function reorderChannels(categoryName: string, fromIndex: number, toIndex: number): void {
+	const cat = channelUIState.categories.find((c) => c.name === categoryName);
+	if (!cat) return;
+	const channels = cat.channels;
+	if (fromIndex < 0 || fromIndex >= channels.length) return;
+	if (toIndex < 0 || toIndex >= channels.length) return;
+	if (fromIndex === toIndex) return;
+	const [moved] = channels.splice(fromIndex, 1);
+	channels.splice(toIndex, 0, moved);
+	saveChannelOrder();
 }
 
 /** Add a DM conversation to the sidebar. Case-insensitive nick matching per IRC RFC 2812. */

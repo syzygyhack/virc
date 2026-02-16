@@ -4,6 +4,7 @@
 		channelState,
 		setActiveChannel,
 		toggleCategory,
+		reorderChannels,
 		type ChannelCategory,
 	} from '$lib/state/channels.svelte';
 	import { getActiveServer } from '$lib/state/servers.svelte';
@@ -172,6 +173,51 @@
 		toggleCategory(cat.name);
 	}
 
+	// --- Drag to reorder channels (ops only) ---
+
+	let dragCategoryName: string | null = $state(null);
+	let dragChannelIndex: number | null = $state(null);
+	let dragOverChannelIndex: number | null = $state(null);
+
+	function handleChannelDragStart(e: DragEvent, categoryName: string, index: number): void {
+		if (!isOp) return;
+		dragCategoryName = categoryName;
+		dragChannelIndex = index;
+		if (e.dataTransfer) {
+			e.dataTransfer.effectAllowed = 'move';
+			e.dataTransfer.setData('text/plain', String(index));
+		}
+	}
+
+	function handleChannelDragOver(e: DragEvent, categoryName: string, index: number): void {
+		if (!isOp || dragCategoryName !== categoryName) return;
+		e.preventDefault();
+		if (e.dataTransfer) {
+			e.dataTransfer.dropEffect = 'move';
+		}
+		dragOverChannelIndex = index;
+	}
+
+	function handleChannelDragLeave(): void {
+		dragOverChannelIndex = null;
+	}
+
+	function handleChannelDrop(e: DragEvent, categoryName: string, toIndex: number): void {
+		e.preventDefault();
+		if (dragCategoryName === categoryName && dragChannelIndex !== null && dragChannelIndex !== toIndex) {
+			reorderChannels(categoryName, dragChannelIndex, toIndex);
+		}
+		dragCategoryName = null;
+		dragChannelIndex = null;
+		dragOverChannelIndex = null;
+	}
+
+	function handleChannelDragEnd(): void {
+		dragCategoryName = null;
+		dragChannelIndex = null;
+		dragOverChannelIndex = null;
+	}
+
 	/**
 	 * Get voice participants for a channel as an array.
 	 * Only returns LiveKit participants — users actively connected to the
@@ -284,10 +330,21 @@
 
 				{#if !cat.collapsed}
 					<div class="category-channels">
-						{#each cat.channels as ch (ch)}
+						{#each cat.channels as ch, chIdx (ch)}
 							{@const chUnread = getUnreadCount(ch)}
 							{@const chMentions = getMentionCount(ch)}
 							{@const chMuted = isMuted(ch)}
+							<!-- svelte-ignore a11y_no_static_element_interactions -->
+							<div
+								class="channel-drag-wrapper"
+								class:drag-over={dragCategoryName === cat.name && dragOverChannelIndex === chIdx && dragChannelIndex !== chIdx}
+								draggable={isOp ? 'true' : 'false'}
+								ondragstart={(e) => handleChannelDragStart(e, cat.name, chIdx)}
+								ondragover={(e) => handleChannelDragOver(e, cat.name, chIdx)}
+								ondragleave={handleChannelDragLeave}
+								ondrop={(e) => handleChannelDrop(e, cat.name, chIdx)}
+								ondragend={handleChannelDragEnd}
+							>
 							<button
 								class="channel-item"
 								class:active={!cat.voice && channelUIState.activeChannel === ch}
@@ -349,6 +406,7 @@
 									</div>
 								{/if}
 							{/if}
+							</div>
 						{/each}
 					</div>
 				{/if}
@@ -658,6 +716,18 @@
 		display: flex;
 		flex-direction: column;
 		gap: 1px;
+	}
+
+	.channel-drag-wrapper {
+		/* Transparent wrapper for drag events; no visual impact by default */
+	}
+
+	.channel-drag-wrapper.drag-over {
+		border-top: 2px solid var(--accent-primary);
+	}
+
+	.channel-drag-wrapper[draggable='true'] {
+		cursor: grab;
 	}
 
 	.channel-item {

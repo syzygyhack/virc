@@ -12,7 +12,7 @@
 	interface Props {
 		onloadhistory?: (target: string, beforeMsgid: string) => void;
 		onreply?: (msgid: string) => void;
-		onreact?: (msgid: string) => void;
+		onreact?: (msgid: string, anchor?: { x: number; y: number }) => void;
 		onmore?: (msgid: string, event: MouseEvent) => void;
 		onpin?: (msgid: string) => void;
 		onedit?: (msgid: string) => void;
@@ -514,12 +514,35 @@
 		handleScrollToMessage(msgid);
 	}
 
+	/** Handle keyboard-driven scroll commands (PageUp/Down, Home, End). */
+	function handleScrollCommand(e: Event): void {
+		if (!scrollContainer) return;
+		const action = (e as CustomEvent<{ action: string }>).detail.action;
+		const pageAmount = scrollContainer.clientHeight * 0.8;
+		switch (action) {
+			case 'pageup':
+				scrollContainer.scrollTop -= pageAmount;
+				break;
+			case 'pagedown':
+				scrollContainer.scrollTop += pageAmount;
+				break;
+			case 'home':
+				scrollContainer.scrollTop = 0;
+				break;
+			case 'end':
+				scrollToBottom();
+				break;
+		}
+	}
+
 	onMount(() => {
 		window.addEventListener('virc:scroll-to-message', handleExternalScroll);
+		window.addEventListener('virc:scroll-messages', handleScrollCommand);
 	});
 
 	onDestroy(() => {
 		window.removeEventListener('virc:scroll-to-message', handleExternalScroll);
+		window.removeEventListener('virc:scroll-messages', handleScrollCommand);
 		if (scrollRafId !== undefined) cancelAnimationFrame(scrollRafId);
 	});
 </script>

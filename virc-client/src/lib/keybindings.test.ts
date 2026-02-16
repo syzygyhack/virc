@@ -187,6 +187,66 @@ describe('keybindings', () => {
 		processKeydown(makeKeyEvent({ key: 'm', ctrlKey: true, shiftKey: true }));
 		expect(handler).toHaveBeenCalledTimes(2);
 	});
+	it('matches Ctrl+[ and Ctrl+]', () => {
+		const hPrev = vi.fn(() => true);
+		const hNext = vi.fn(() => true);
+		registerKeybindings([
+			{ key: '[', ctrl: true, handler: hPrev },
+			{ key: ']', ctrl: true, handler: hNext },
+		]);
+
+		processKeydown(makeKeyEvent({ key: '[', ctrlKey: true }));
+		expect(hPrev).toHaveBeenCalledTimes(1);
+		expect(hNext).not.toHaveBeenCalled();
+
+		processKeydown(makeKeyEvent({ key: ']', ctrlKey: true }));
+		expect(hNext).toHaveBeenCalledTimes(1);
+	});
+
+	it('matches Shift+Escape', () => {
+		const handler = vi.fn(() => true);
+		registerKeybinding({ key: 'Escape', shift: true, handler });
+
+		// Plain Escape should not match
+		processKeydown(makeKeyEvent({ key: 'Escape' }));
+		expect(handler).not.toHaveBeenCalled();
+
+		// Shift+Escape should match
+		processKeydown(makeKeyEvent({ key: 'Escape', shiftKey: true }));
+		expect(handler).toHaveBeenCalledTimes(1);
+	});
+
+	it('matches PageUp, PageDown, Home, End', () => {
+		const handlers = {
+			PageUp: vi.fn(() => true),
+			PageDown: vi.fn(() => true),
+			Home: vi.fn(() => true),
+			End: vi.fn(() => true),
+		};
+		registerKeybindings([
+			{ key: 'PageUp', handler: handlers.PageUp },
+			{ key: 'PageDown', handler: handlers.PageDown },
+			{ key: 'Home', handler: handlers.Home },
+			{ key: 'End', handler: handlers.End },
+		]);
+
+		for (const [key, handler] of Object.entries(handlers)) {
+			processKeydown(makeKeyEvent({ key }));
+			expect(handler).toHaveBeenCalledTimes(1);
+		}
+	});
+
+	it('matches Ctrl+E', () => {
+		const handler = vi.fn(() => true);
+		registerKeybinding({ key: 'e', ctrl: true, handler });
+
+		processKeydown(makeKeyEvent({ key: 'e', ctrlKey: true }));
+		expect(handler).toHaveBeenCalledTimes(1);
+
+		// Without Ctrl should not match
+		processKeydown(makeKeyEvent({ key: 'e' }));
+		expect(handler).toHaveBeenCalledTimes(1);
+	});
 });
 
 describe('keybinding customization', () => {
@@ -329,6 +389,22 @@ describe('formatCombo', () => {
 
 	it('formats Ctrl+Shift+M', () => {
 		expect(formatCombo({ key: 'M', ctrl: true, shift: true })).toBe('Ctrl+Shift+M');
+	});
+
+	it('formats Ctrl+[ and Ctrl+]', () => {
+		expect(formatCombo({ key: '[', ctrl: true })).toBe('Ctrl+[');
+		expect(formatCombo({ key: ']', ctrl: true })).toBe('Ctrl+]');
+	});
+
+	it('formats Shift+Escape', () => {
+		expect(formatCombo({ key: 'Escape', shift: true })).toBe('Shift+Esc');
+	});
+
+	it('formats PageUp, PageDown, Home, End', () => {
+		expect(formatCombo({ key: 'PageUp' })).toBe('PageUp');
+		expect(formatCombo({ key: 'PageDown' })).toBe('PageDown');
+		expect(formatCombo({ key: 'Home' })).toBe('Home');
+		expect(formatCombo({ key: 'End' })).toBe('End');
 	});
 });
 

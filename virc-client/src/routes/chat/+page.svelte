@@ -34,7 +34,7 @@
 	import { getMember, clearChannel as clearRichMembers, memberState } from '$lib/state/members.svelte';
 	import { getCursors, getMessage, getMessages, redactMessage, addReaction, removeReaction, updateSendState, addMessage, pinMessage, unpinMessage, isPinned } from '$lib/state/messages.svelte';
 	import type { Message } from '$lib/state/messages.svelte';
-	import { addServer, getActiveServer } from '$lib/state/servers.svelte';
+	import { addServer, getActiveServer, serverState, setActiveServer } from '$lib/state/servers.svelte';
 	import { installGlobalHandler, registerKeybindings } from '$lib/keybindings';
 	import ChannelSidebar from '../../components/ChannelSidebar.svelte';
 	import HeaderBar from '../../components/HeaderBar.svelte';
@@ -124,7 +124,7 @@
 	// Settings modal state
 	let showSettings = $state(false);
 	let showServerSettings = $state(false);
-	let serverSettingsInitialTab: 'overview' | 'channels' | 'roles' | 'members' | 'invites' = $state('overview');
+	let serverSettingsInitialTab: 'overview' | 'channels' | 'roles' | 'members' | 'invites' | 'appearance' | 'moderation' = $state('overview');
 
 	// Voice overlay state
 	let showVoiceOverlay = $state(false);
@@ -348,13 +348,26 @@
 		replyContext = null;
 	}
 
-	/** React button clicked on a message — open emoji picker. */
-	function handleReact(msgid: string): void {
+	/** React button clicked on a message — open emoji picker.
+	 *  If anchor coordinates are provided (from the reaction bar '+' button),
+	 *  position the picker near the anchor. Otherwise center it on screen.
+	 */
+	function handleReact(msgid: string, anchor?: { x: number; y: number }): void {
 		emojiPickerTarget = msgid;
-		emojiPickerPosition = {
-			x: Math.max(16, window.innerWidth / 2 - 176),
-			y: Math.max(16, window.innerHeight / 2 - 200),
-		};
+		if (anchor) {
+			// Position picker above the anchor point, clamped to viewport
+			const pickerWidth = 352;
+			const pickerHeight = 400;
+			emojiPickerPosition = {
+				x: Math.max(16, Math.min(anchor.x, window.innerWidth - pickerWidth - 16)),
+				y: Math.max(16, anchor.y - pickerHeight - 8),
+			};
+		} else {
+			emojiPickerPosition = {
+				x: Math.max(16, window.innerWidth / 2 - 176),
+				y: Math.max(16, window.innerHeight / 2 - 200),
+			};
+		}
 	}
 
 	/** Open emoji picker for inserting into the message input. */
@@ -1015,6 +1028,39 @@
 		}
 	}
 
+	/** Navigate to the next or previous server in the server list. */
+	function navigateServer(direction: 1 | -1): void {
+		const servers = serverState.servers;
+		if (servers.length === 0) return;
+		const activeId = serverState.activeServerId;
+		const idx = activeId ? servers.findIndex((s) => s.id === activeId) : -1;
+		let next: number;
+		if (idx === -1) {
+			next = direction === 1 ? 0 : servers.length - 1;
+		} else {
+			next = (idx + direction + servers.length) % servers.length;
+		}
+		setActiveServer(servers[next].id);
+	}
+
+	/** Mark the active channel as read and sync via MARKREAD. */
+	function markActiveChannelRead(): void {
+		const channel = channelUIState.activeChannel;
+		if (!channel) return;
+		const cursors = getCursors(channel);
+		if (cursors.newestMsgid) {
+			markRead(channel, cursors.newestMsgid);
+		}
+		if (conn) {
+			markread(conn, channel, new Date().toISOString());
+		}
+	}
+
+	/** Scroll the message list by dispatching a custom event. */
+	function scrollMessageList(action: 'pageup' | 'pagedown' | 'home' | 'end'): void {
+		window.dispatchEvent(new CustomEvent('virc:scroll-messages', { detail: { action } }));
+	}
+
 	// Track the msgid and channel being edited — redaction deferred until user confirms send
 	let editingMsgid: string | null = $state(null);
 	let editingChannel: string | null = $state(null);
@@ -1332,6 +1378,91 @@
 					return false;
 				},
 				description: 'Toggle screen share',
+			},
+			// Ctrl+[ — Previous server
+			{
+				key: '[',
+				ctrl: true,
+				handler: () => {
+					navigateServer(-1);
+					return true;
+				},
+				description: 'Navigate to previous server',
+			},
+			// Ctrl+] — Next server
+			{
+				key: ']',
+				ctrl: true,
+				handler: () => {
+					navigateServer(1);
+					return true;
+				},
+				description: 'Navigate to next server',
+			},
+			// Ctrl+E — Toggle emoji picker
+			{
+				key: 'e',
+				ctrl: true,
+				handler: () => {
+					handleInputEmojiPicker();
+					return true;
+				},
+				description: 'Toggle emoji picker',
+			},
+			// Shift+Escape — Mark channel as read
+			{
+				key: 'Escape',
+				shift: true,
+				handler: () => {
+					markActiveChannelRead();
+					return true;
+				},
+				description: 'Mark channel as read',
+			},
+			// PageUp — Scroll messages up
+			{
+				key: 'PageUp',
+				handler: (e) => {
+					// Don't capture when in an input/textarea
+					const tag = (e.target as HTMLElement)?.tagName;
+					if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return false;
+					scrollMessageList('pageup');
+					return true;
+				},
+				description: 'Scroll messages up',
+			},
+			// PageDown — Scroll messages down
+			{
+				key: 'PageDown',
+				handler: (e) => {
+					const tag = (e.target as HTMLElement)?.tagName;
+					if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return false;
+					scrollMessageList('pagedown');
+					return true;
+				},
+				description: 'Scroll messages down',
+			},
+			// Home — Jump to oldest loaded message
+			{
+				key: 'Home',
+				handler: (e) => {
+					const tag = (e.target as HTMLElement)?.tagName;
+					if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return false;
+					scrollMessageList('home');
+					return true;
+				},
+				description: 'Jump to oldest message',
+			},
+			// End — Jump to newest message
+			{
+				key: 'End',
+				handler: (e) => {
+					const tag = (e.target as HTMLElement)?.tagName;
+					if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return false;
+					scrollMessageList('end');
+					return true;
+				},
+				description: 'Jump to newest message',
 			},
 		]);
 	}

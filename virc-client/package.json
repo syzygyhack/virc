@@ -26,7 +26,8 @@
   },
   "dependencies": {
     "@tauri-apps/plugin-opener": "^2.5.3",
-    "livekit-client": "^2.0.0"
+    "livekit-client": "^2.0.0",
+    "tauri-plugin-keyring-api": "^0.1.1"
   },
   "type": "module"
 }

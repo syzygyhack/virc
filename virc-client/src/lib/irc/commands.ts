@@ -8,7 +8,7 @@ import { formatMessage } from './parser';
 export function escapeTagValue(value: string): string {
 	return value
 		.replace(/\\/g, '\\\\')
-		.replace(/;/g, '\\:')
+		.replace(/;/g, '\\;')
 		.replace(/ /g, '\\s')
 		.replace(/\r/g, '\\r')
 		.replace(/\n/g, '\\n');
@@ -28,12 +28,12 @@ export function part(conn: IRCConnection, channel: string, reason?: string): voi
 	}
 }
 
-/** Send a PRIVMSG to a target (channel or nick). Optionally attach a +virc/edit tag for edits. */
-export function privmsg(conn: IRCConnection, target: string, text: string, editMsgid?: string): void {
+/** Send a PRIVMSG to a target (channel or nick). Optionally attach a +virc/edit tag for edits. Returns false if send failed. */
+export function privmsg(conn: IRCConnection, target: string, text: string, editMsgid?: string): boolean {
 	if (editMsgid) {
-		conn.send(`@+virc/edit=${escapeTagValue(editMsgid)} ${formatMessage('PRIVMSG', target, text)}`);
+		return conn.send(`@+virc/edit=${escapeTagValue(editMsgid)} ${formatMessage('PRIVMSG', target, text)}`);
 	} else {
-		conn.send(formatMessage('PRIVMSG', target, text));
+		return conn.send(formatMessage('PRIVMSG', target, text));
 	}
 }
 
@@ -45,7 +45,7 @@ export function tagmsg(conn: IRCConnection, target: string, tags: Record<string,
 	const tagStr = Object.entries(tags)
 		.map(([k, v]) => (v ? `${k}=${escapeTagValue(v)}` : k))
 		.join(';');
-	conn.send(`@${tagStr} TAGMSG ${target}`);
+	conn.send(`@${tagStr} ${formatMessage('TAGMSG', target)}`);
 }
 
 /**

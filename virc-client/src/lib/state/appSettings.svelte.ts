@@ -21,7 +21,7 @@ interface AppSettingsData {
 
 const defaults: AppSettingsData = {
 	zoom: 125,
-	systemMessageDisplay: 'all',
+	systemMessageDisplay: 'smart',
 	showRawIrc: false,
 	developerMode: false,
 };

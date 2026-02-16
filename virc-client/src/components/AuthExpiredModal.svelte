@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { clearCredentials, clearToken } from '$lib/api/auth';
 
 	interface Props {
@@ -9,9 +8,12 @@
 	let { visible }: Props = $props();
 
 	function handleLogin(): void {
-		clearCredentials();
+		void clearCredentials();
 		clearToken();
-		goto('/login');
+		localStorage.removeItem('virc:serverUrl');
+		localStorage.removeItem('virc:filesUrl');
+		// Hard navigate — avoids SvelteKit state issues during reconnect/auth failures
+		window.location.href = '/login';
 	}
 </script>
 

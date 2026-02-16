@@ -27,11 +27,11 @@ function createSessionStorageMock() {
 }
 
 describe('user state', () => {
-	beforeEach(() => {
+	beforeEach(async () => {
 		const storage = createSessionStorageMock();
 		vi.stubGlobal('localStorage', storage);
 		// Reset state to clean slate
-		logout();
+		await logout();
 	});
 
 	afterEach(() => {
@@ -47,37 +47,37 @@ describe('user state', () => {
 		expect(isAuthenticated()).toBe(false);
 	});
 
-	it('login() sets account, nick, and stores credentials', () => {
-		login('alice', 'hunter2');
+	it('login() sets account, nick, and stores credentials', async () => {
+		await login('alice', 'hunter2');
 
 		expect(userState.account).toBe('alice');
 		expect(userState.nick).toBe('alice');
 		expect(isAuthenticated()).toBe(true);
 
-		const creds = getStoredCredentials();
+		const creds = await getStoredCredentials();
 		expect(creds).toEqual({ account: 'alice', password: 'hunter2' });
 	});
 
-	it('logout() clears state and credentials', () => {
-		login('alice', 'hunter2');
-		logout();
+	it('logout() clears state and credentials', async () => {
+		await login('alice', 'hunter2');
+		await logout();
 
 		expect(userState.account).toBeNull();
 		expect(userState.nick).toBeNull();
 		expect(isAuthenticated()).toBe(false);
-		expect(getStoredCredentials()).toBeNull();
+		expect(await getStoredCredentials()).toBeNull();
 	});
 
-	it('setNick() updates the nick without changing account', () => {
-		login('alice', 'hunter2');
+	it('setNick() updates the nick without changing account', async () => {
+		await login('alice', 'hunter2');
 		setNick('alice_away');
 
 		expect(userState.nick).toBe('alice_away');
 		expect(userState.account).toBe('alice');
 	});
 
-	it('rehydrate() restores state from localStorage', () => {
-		login('bob', 'pass123');
+	it('rehydrate() restores state from localStorage', async () => {
+		await login('bob', 'pass123');
 
 		// Simulate state loss (e.g. module re-import after reload)
 		userState.account = null;

@@ -5,11 +5,15 @@
 	import { formatMessage } from '$lib/irc/parser';
 	import SlashCommandMenu from './SlashCommandMenu.svelte';
 	import { filterCommands, type CommandDef } from './SlashCommandMenu.svelte';
-	import { getMember } from '$lib/state/members.svelte';
+	import AutocompleteMenu from './AutocompleteMenu.svelte';
+	import type { CompletionItem } from './AutocompleteMenu.svelte';
+	import { getMember, getMembers } from '$lib/state/members.svelte';
+	import { channelUIState } from '$lib/state/channels.svelte';
 	import { userState } from '$lib/state/user.svelte';
-	import { addMessage, generateLocalMsgid } from '$lib/state/messages.svelte';
+	import { addMessage, generateLocalMsgid, updateSendState } from '$lib/state/messages.svelte';
 	import { uploadFile } from '$lib/files/upload';
 	import { getToken } from '$lib/api/auth';
+	import { searchEmoji, searchCustomEmoji } from '$lib/emoji';
 
 	interface ReplyContext {
 		msgid: string;
@@ -32,9 +36,10 @@
 		disconnected?: boolean;
 		rateLimitSeconds?: number;
 		filesUrl?: string | null;
+		onemojipicker?: () => void;
 	}
 
-	let { target, connection, reply = null, oncancelreply, oneditlast, editing = false, editMsgid = null, oneditcomplete, oneditcancel, disconnected = false, rateLimitSeconds = 0, filesUrl = null }: Props = $props();
+	let { target, connection, reply = null, oncancelreply, oneditlast, editing = false, editMsgid = null, oneditcomplete, oneditcancel, disconnected = false, rateLimitSeconds = 0, filesUrl = null, onemojipicker }: Props = $props();
 
 	let text = $state('');
 	let textarea: HTMLTextAreaElement | undefined = $state();
@@ -61,10 +66,16 @@
 		return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 	}
 
+	const MAX_CLIENT_FILE_SIZE = 25 * 1024 * 1024; // 25 MB — matches server default
+
 	/** Stage files for upload, generating image previews where applicable. */
 	function stageFiles(files: FileList | File[]): void {
 		uploadError = null;
 		for (const file of files) {
+			if (file.size > MAX_CLIENT_FILE_SIZE) {
+				uploadError = `File "${file.name}" is too large (${formatSize(file.size)} > ${formatSize(MAX_CLIENT_FILE_SIZE)})`;
+				return;
+			}
 			const staged: StagedFile = { file };
 			if (file.type.startsWith('image/')) {
 				staged.preview = URL.createObjectURL(file);
@@ -214,6 +225,109 @@
 		return false;
 	}
 
+	// --- Tab completion (@user, #channel, :emoji:) ---
+
+	const MAX_COMPLETIONS = 10;
+
+	/** Extract the trigger word at the cursor position. Returns trigger type and query. */
+	function getCompletionContext(): { type: '@' | '#' | ':'; query: string; start: number } | null {
+		if (!textarea) return null;
+		const cursor = textarea.selectionStart;
+		const before = text.slice(0, cursor);
+		// Match @query, #query, or :query at the end (possibly after a space or start of line)
+		const match = before.match(/(?:^|\s)(@|#|:)(\S*)$/);
+		if (!match) return null;
+		const trigger = match[1] as '@' | '#' | ':';
+		const query = match[2];
+		const start = cursor - query.length - 1; // position of the trigger char
+		return { type: trigger, query, start };
+	}
+
+	let acContext = $derived.by(() => getCompletionContext());
+
+	let acItems = $derived.by((): CompletionItem[] => {
+		if (!acContext || showSlashMenu) return [];
+		const { type, query } = acContext;
+		const q = query.toLowerCase();
+
+		if (type === '@') {
+			const members = target.startsWith('#') ? getMembers(target) : [];
+			return members
+				.filter((m) => m.nick.toLowerCase().startsWith(q))
+				.slice(0, MAX_COMPLETIONS)
+				.map((m) => ({ label: `@${m.nick}`, value: `@${m.nick} `, detail: m.account || undefined }));
+		}
+
+		if (type === '#') {
+			const allChannels = channelUIState.categories
+				.filter((c) => !c.voice)
+				.flatMap((c) => c.channels);
+			return allChannels
+				.filter((ch) => ch.toLowerCase().startsWith(`#${q}`))
+				.slice(0, MAX_COMPLETIONS)
+				.map((ch) => ({ label: ch, value: `${ch} ` }));
+		}
+
+		if (type === ':' && q.length >= 2) {
+			const custom = searchCustomEmoji(q).slice(0, 5)
+				.map((e) => ({ label: `:${e.name}:`, value: `:${e.name}: `, detail: 'custom' }));
+			const unicode = searchEmoji(q).slice(0, MAX_COMPLETIONS - custom.length)
+				.map((e) => ({ label: `${e.emoji} ${e.name}`, value: `${e.emoji} ` }));
+			return [...custom, ...unicode];
+		}
+
+		return [];
+	});
+
+	let showAutocomplete = $derived(acItems.length > 0);
+	let acSelectedIndex = $state(0);
+
+	// Reset selection when completion list changes
+	$effect(() => {
+		void acItems;
+		acSelectedIndex = 0;
+	});
+
+	function handleAcSelect(item: CompletionItem): void {
+		if (!acContext || !textarea) return;
+		const before = text.slice(0, acContext.start);
+		const after = text.slice(textarea.selectionStart);
+		text = before + item.value + after;
+		requestAnimationFrame(() => {
+			textarea?.focus();
+			if (textarea) {
+				const pos = before.length + item.value.length;
+				textarea.selectionStart = textarea.selectionEnd = pos;
+			}
+		});
+	}
+
+	function handleAcKeydown(event: KeyboardEvent): boolean {
+		if (!showAutocomplete || acItems.length === 0) return false;
+
+		if (event.key === 'ArrowDown') {
+			event.preventDefault();
+			acSelectedIndex = (acSelectedIndex + 1) % acItems.length;
+			return true;
+		}
+		if (event.key === 'ArrowUp') {
+			event.preventDefault();
+			acSelectedIndex = (acSelectedIndex - 1 + acItems.length) % acItems.length;
+			return true;
+		}
+		if (event.key === 'Tab' || event.key === 'Enter') {
+			event.preventDefault();
+			handleAcSelect(acItems[acSelectedIndex]);
+			return true;
+		}
+		if (event.key === 'Escape') {
+			event.preventDefault();
+			text = text + ' ';
+			return true;
+		}
+		return false;
+	}
+
 	// Listen for programmatic edit-message events (from keyboard shortcut: Up arrow)
 	function handleEditMessage(e: Event): void {
 		const detail = (e as CustomEvent<{ text: string }>).detail;
@@ -246,14 +360,31 @@
 		}
 	}
 
+	// Listen for emoji insertion from the emoji picker
+	function handleInsertEmoji(e: Event): void {
+		const detail = (e as CustomEvent<{ emoji: string }>).detail;
+		if (detail?.emoji) {
+			text += detail.emoji;
+			requestAnimationFrame(() => {
+				adjustHeight();
+				textarea?.focus();
+				if (textarea) {
+					textarea.selectionStart = textarea.selectionEnd = text.length;
+				}
+			});
+		}
+	}
+
 	onMount(() => {
 		window.addEventListener('virc:edit-message', handleEditMessage);
 		window.addEventListener('virc:insert-mention', handleInsertMention);
+		window.addEventListener('virc:insert-emoji', handleInsertEmoji);
 	});
 
 	onDestroy(() => {
 		window.removeEventListener('virc:edit-message', handleEditMessage);
 		window.removeEventListener('virc:insert-mention', handleInsertMention);
+		window.removeEventListener('virc:insert-emoji', handleInsertEmoji);
 		clearTypingTimer();
 		// Clean up object URLs for staged file previews
 		for (const sf of stagedFiles) {
@@ -378,6 +509,21 @@
 				}
 				return true;
 			}
+			case 'whois': {
+				const whoisUser = args.trim();
+				if (whoisUser) {
+					connection.send(formatMessage('WHOIS', whoisUser));
+				}
+				return true;
+			}
+			case 'mute': {
+				// Mute = set +q (quiet) on the user's hostmask
+				const muteUser = args.trim();
+				if (muteUser) {
+					connection.send(formatMessage('MODE', target, '+q', `${muteUser}!*@*`));
+				}
+				return true;
+			}
 			case 'kick': {
 				const kickMatch = args.match(/^(\S+)\s*(.*)/);
 				if (kickMatch) {
@@ -406,7 +552,8 @@
 			}
 			case 'mode':
 				if (args.trim()) {
-					connection.send(`MODE ${args.trim()}`);
+					const modeArgs = args.trim().split(/\s+/);
+					connection.send(formatMessage('MODE', target, ...modeArgs));
 				}
 				return true;
 			default:
@@ -471,7 +618,9 @@
 			try {
 				for (const staged of stagedFiles) {
 					const result = await uploadFile(staged.file, token, filesUrl);
-					// Build a full URL from the relative path
+					// Build full URL from the server's relative path and the discovered filesUrl.
+					// filesUrl is derived from the WS connection URL (or virc.json override),
+					// so it already points to the correct public server address.
 					const fullUrl = `${filesUrl.replace(/\/+$/, '')}${result.url}`;
 					fileUrls.push(fullUrl);
 				}
@@ -506,8 +655,9 @@
 			privmsg(connection, target, ircText, editMsgid);
 		} else {
 			// Add optimistic message immediately so it appears without waiting for server echo
+			const localMsgid = generateLocalMsgid();
 			addMessage(target, {
-				msgid: generateLocalMsgid(),
+				msgid: localMsgid,
 				nick: userState.nick ?? '',
 				account: userState.account ?? '',
 				target,
@@ -521,11 +671,16 @@
 				sendState: 'sending',
 			});
 
+			let sent: boolean;
 			if (reply) {
 				const tags = `@+draft/reply=${escapeTagValue(reply.msgid)}`;
-				connection.send(`${tags} PRIVMSG ${target} :${ircText}`);
+				sent = connection.send(`${tags} PRIVMSG ${target} :${ircText}`);
 			} else {
-				privmsg(connection, target, ircText);
+				sent = privmsg(connection, target, ircText);
+			}
+
+			if (!sent) {
+				updateSendState(target, localMsgid, 'failed');
 			}
 		}
 
@@ -550,6 +705,8 @@
 	function handleKeydown(event: KeyboardEvent): void {
 		// Let slash command menu handle navigation keys when open
 		if (handleSlashMenuKeydown(event)) return;
+		// Let autocomplete menu handle navigation keys when open
+		if (handleAcKeydown(event)) return;
 
 		// Formatting shortcuts
 		if ((event.ctrlKey || event.metaKey) && !event.shiftKey) {
@@ -628,7 +785,19 @@
 
 	$effect(() => {
 		void target; // re-run when target (channel) changes
-		requestAnimationFrame(() => textarea?.focus());
+		// Send typing=done to the previous channel if we were typing
+		if (typingDoneTimer !== null && connection) {
+			// The timer callback would send to the new target, so cancel it
+			// and send done explicitly (the old target is already gone from
+			// the closure, so we just cancel — the 6s server timeout handles it)
+			clearTypingTimer();
+		}
+		lastTypingSent = 0;
+		text = '';
+		requestAnimationFrame(() => {
+			adjustHeight();
+			textarea?.focus();
+		});
 	});
 
 	let placeholder = $derived(
@@ -709,6 +878,13 @@
 				onselect={handleSlashSelect}
 				onhover={(i) => slashSelectedIndex = i}
 			/>
+		{:else if showAutocomplete}
+			<AutocompleteMenu
+				items={acItems}
+				selectedIndex={acSelectedIndex}
+				onselect={handleAcSelect}
+				onhover={(i) => acSelectedIndex = i}
+			/>
 		{/if}
 		<button
 			class="file-upload-btn"
@@ -731,6 +907,17 @@
 			oninput={handleInput}
 			onpaste={handlePaste}
 		></textarea>
+		<button
+			class="emoji-btn"
+			title="Emoji picker"
+			onclick={() => onemojipicker?.()}
+			disabled={inputDisabled}
+			aria-label="Emoji picker"
+		>
+			<svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
+				<path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16zm0-1.5a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13zM7.5 8.5a1 1 0 1 1 0-2 1 1 0 0 1 0 2zm5 0a1 1 0 1 1 0-2 1 1 0 0 1 0 2zM6.75 11.25a.75.75 0 0 1 1.06.02A2.5 2.5 0 0 0 10 12.25a2.5 2.5 0 0 0 2.19-.98.75.75 0 1 1 1.12 1A4 4 0 0 1 10 13.75a4 4 0 0 1-3.27-1.44.75.75 0 0 1 .02-1.06z" clip-rule="evenodd"/>
+			</svg>
+		</button>
 	</div>
 	<input
 		bind:this={fileInput}
@@ -893,6 +1080,34 @@
 	}
 
 	.file-upload-btn:disabled {
+		opacity: 0.4;
+		cursor: not-allowed;
+	}
+
+	/* Emoji picker button */
+	.emoji-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 28px;
+		height: 28px;
+		padding: 0;
+		border: none;
+		background: transparent;
+		color: var(--interactive-normal);
+		cursor: pointer;
+		border-radius: 4px;
+		flex-shrink: 0;
+		margin-left: 6px;
+		transition: color 0.1s ease, background 0.1s ease;
+	}
+
+	.emoji-btn:hover:not(:disabled) {
+		color: var(--interactive-hover);
+		background: var(--surface-highest);
+	}
+
+	.emoji-btn:disabled {
 		opacity: 0.4;
 		cursor: not-allowed;
 	}

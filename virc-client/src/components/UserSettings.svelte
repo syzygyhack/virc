@@ -1,8 +1,7 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
-	import { goto } from '$app/navigation';
-	import { userState, logout } from '$lib/state/user.svelte';
-	import { clearToken } from '$lib/api/auth';
+	import { userState } from '$lib/state/user.svelte';
+	import { clearToken, clearCredentials } from '$lib/api/auth';
 	import { formatMessage } from '$lib/irc/parser';
 	import { audioSettings, type VideoQuality } from '$lib/state/audioSettings.svelte';
 	import { appSettings, type ZoomLevel, type SystemMessageDisplay } from '$lib/state/appSettings.svelte';
@@ -174,10 +173,14 @@
 		return names[code] ?? code;
 	}
 
-	async function handleLogout(): Promise<void> {
-		logout();
+	function handleLogout(): void {
+		// Best-effort credential cleanup (async, but localStorage clears synchronously)
+		void clearCredentials();
+		localStorage.removeItem('virc:serverUrl');
+		localStorage.removeItem('virc:filesUrl');
 		clearToken();
-		await goto('/login');
+		// Hard navigate — bypasses SvelteKit lifecycle
+		window.location.href = '/login';
 	}
 
 	function startEditingNick(): void {

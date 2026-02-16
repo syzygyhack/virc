@@ -68,10 +68,13 @@
 				showPinnedDropdown = false;
 			}
 		}
-		requestAnimationFrame(() => {
+		const rafId = requestAnimationFrame(() => {
 			window.addEventListener('click', handleClickOutside, { capture: true });
 		});
-		return () => window.removeEventListener('click', handleClickOutside, { capture: true });
+		return () => {
+			cancelAnimationFrame(rafId);
+			window.removeEventListener('click', handleClickOutside, { capture: true });
+		};
 	});
 
 	/** Pinned message IDs for the active channel. */

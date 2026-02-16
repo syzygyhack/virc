@@ -117,6 +117,16 @@ export function setNamesLoaded(channel: string): void {
 	}
 }
 
+/** Clear all members from a channel and reset namesLoaded (for reconnect). */
+export function clearChannelMembers(name: string): void {
+	const ch = _channels.get(name);
+	if (ch) {
+		ch.members.clear();
+		ch.namesLoaded = false;
+		notify();
+	}
+}
+
 /** Remove a channel entirely (on PART by self). */
 export function removeChannel(name: string): void {
 	_channels.delete(name);
@@ -190,10 +200,13 @@ export function toggleCategory(name: string): void {
 	}
 }
 
-/** Add a DM conversation to the sidebar. */
+/** Add a DM conversation to the sidebar. Case-insensitive nick matching per IRC RFC 2812. */
 export function addDMConversation(nick: string, account = '', lastMessage?: string): void {
-	const existing = channelUIState.dmConversations.find((d) => d.nick === nick);
+	const nickLower = nick.toLowerCase();
+	const existing = channelUIState.dmConversations.find((d) => d.nick.toLowerCase() === nickLower);
 	if (existing) {
+		// Update the stored nick casing to the most recent form
+		existing.nick = nick;
 		if (lastMessage !== undefined) {
 			existing.lastMessage = lastMessage;
 			existing.lastTime = new Date();

@@ -1,15 +1,17 @@
 /**
  * Reactive user/auth state for the current session.
  *
- * Credentials are persisted in localStorage so they survive app restarts
- * (required for Tauri where sessionStorage is cleared on window close).
- * This supports SASL reconnect and JWT refresh without re-prompting the user.
+ * Account name is stored in localStorage (fast, sync, non-sensitive).
+ * Password is stored in the OS keychain in Tauri builds, or localStorage
+ * in web builds. See auth.ts for the full credential storage strategy.
  */
 
 import {
 	storeCredentials,
 	getCredentials,
 	clearCredentials,
+	clearToken,
+	isAuthenticated as hasStoredCredentials,
 	type StoredCredentials,
 } from '../api/auth';
 
@@ -35,11 +37,11 @@ export function isAuthenticated(): boolean {
 }
 
 /**
- * Log the user in: store credentials in localStorage and update
- * reactive state. Does NOT perform SASL or JWT — callers handle that.
+ * Log the user in: store credentials and update reactive state.
+ * Does NOT perform SASL or JWT — callers handle that.
  */
-export function login(account: string, password: string): void {
-	storeCredentials({ account, password });
+export async function login(account: string, password: string): Promise<void> {
+	await storeCredentials({ account, password });
 	userState.account = account;
 	userState.nick = account; // Nick defaults to account name until server confirms
 }
@@ -47,8 +49,9 @@ export function login(account: string, password: string): void {
 /**
  * Clear session: remove stored credentials, server URLs, and reset reactive state.
  */
-export function logout(): void {
-	clearCredentials();
+export async function logout(): Promise<void> {
+	await clearCredentials();
+	clearToken();
 	if (typeof localStorage !== 'undefined') {
 		localStorage.removeItem('virc:serverUrl');
 		localStorage.removeItem('virc:filesUrl');
@@ -68,18 +71,37 @@ export function setNick(nick: string): void {
  * Retrieve stored credentials for SASL reconnect or JWT refresh.
  * Returns null if no credentials are stored.
  */
-export function getStoredCredentials(): StoredCredentials | null {
+export async function getStoredCredentials(): Promise<StoredCredentials | null> {
 	return getCredentials();
 }
 
 /**
  * Restore reactive state from localStorage on app start.
- * Call once during initialization to rehydrate after page reload or app restart.
+ * Uses sync localStorage check for the account name (fast) —
+ * the password is only fetched async when actually needed.
  */
 export function rehydrate(): void {
-	const creds = getCredentials();
-	if (creds) {
-		userState.account = creds.account;
-		userState.nick = creds.account;
+	if (typeof localStorage === 'undefined') return;
+	// Check new key first, then legacy
+	const account = localStorage.getItem('virc:account');
+	if (account) {
+		userState.account = account;
+		userState.nick = account;
+		return;
+	}
+	// Legacy: check virc:credentials
+	if (hasStoredCredentials()) {
+		const raw = localStorage.getItem('virc:credentials');
+		if (raw) {
+			try {
+				const parsed = JSON.parse(raw) as { account: string };
+				if (parsed.account) {
+					userState.account = parsed.account;
+					userState.nick = parsed.account;
+				}
+			} catch {
+				// Corrupted — ignore
+			}
+		}
 	}
 }

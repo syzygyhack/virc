@@ -47,7 +47,10 @@ export function authenticateSASL(
 				if (msg.params[0] === '+') {
 					// Server is ready for credentials
 					const payload = `\0${account}\0${password}`;
-					const encoded = btoa(payload);
+					// Use TextEncoder to handle non-ASCII passwords safely
+					// (btoa throws on chars > 255)
+					const bytes = new TextEncoder().encode(payload);
+					const encoded = btoa(Array.from(bytes, (b) => String.fromCharCode(b)).join(''));
 					conn.send(`AUTHENTICATE ${encoded}`);
 					phase = 'wait-result';
 				}

@@ -268,7 +268,13 @@ export function linkify(text: string): string {
 	// display text is kept as-is (already safe HTML).
 	return text.replace(
 		/(https?:\/\/[^\s<>"]+)/g,
-		(url) => {
+		(match) => {
+			// Strip trailing punctuation that's unlikely to be part of the URL
+			const trailingMatch = match.match(/[.,;:!?)]+$/);
+			const trailing = trailingMatch ? trailingMatch[0] : '';
+			const url = trailing ? match.slice(0, -trailing.length) : match;
+			if (!url) return match;
+
 			// Decode HTML entities back to raw URL for the href attribute
 			const href = url
 				.replace(/&amp;/g, '&')
@@ -276,7 +282,7 @@ export function linkify(text: string): string {
 				.replace(/&gt;/g, '>')
 				.replace(/&quot;/g, '"')
 				.replace(/&#39;/g, "'");
-			return `<a href="${escapeHTML(href)}" target="_blank" rel="noopener noreferrer">${url}</a>`;
+			return `<a href="${escapeHTML(href)}" target="_blank" rel="noopener noreferrer">${url}</a>${trailing}`;
 		}
 	);
 }
@@ -293,8 +299,8 @@ export function linkify(text: string): string {
  * of calling this directly.
  */
 export function highlightMentions(text: string, myAccount: string): string {
-	// Highlight @mentions
-	let result = text.replace(/@(\w+)/g, (match, name: string) => {
+	// Highlight @mentions (IRC nicks can contain letters, digits, -, _, [, ], {, }, \, ^)
+	let result = text.replace(/@([\w\-\[\]{}\\\^]+)/g, (match, name: string) => {
 		const isSelf = name.toLowerCase() === myAccount.toLowerCase();
 		const cls = isSelf ? 'mention mention-self' : 'mention';
 		return `<span class="${cls}">${match}</span>`;

@@ -3,9 +3,9 @@
 	import { IRCConnection } from '$lib/irc/connection';
 	import { negotiateCaps } from '$lib/irc/cap';
 	import { authenticateSASL } from '$lib/irc/sasl';
-	import { registerHandler, resetHandlerState } from '$lib/irc/handler';
-	import { join, chathistory, markread, tagmsg, redact, privmsg, topic, monitor, who } from '$lib/irc/commands';
-	import { getCredentials, getToken, fetchToken, startTokenRefresh, stopTokenRefresh } from '$lib/api/auth';
+	import { registerHandler, resetHandlerState, setSuppressSelfJoins } from '$lib/irc/handler';
+	import { join, chathistory, markread, tagmsg, redact, privmsg, topic, monitor, who, escapeTagValue } from '$lib/irc/commands';
+	import { getCredentials, getToken, fetchToken, startTokenRefresh, stopTokenRefresh, clearCredentials, clearToken } from '$lib/api/auth';
 	import { connectToVoice, disconnectVoice, toggleMute as toggleMuteRoom, toggleDeafen as toggleDeafenRoom, toggleVideo as toggleVideoRoom, toggleScreenShare as toggleScreenShareRoom } from '$lib/voice/room';
 	import { voiceState, updateParticipant } from '$lib/state/voice.svelte';
 	import { audioSettings } from '$lib/state/audioSettings.svelte';
@@ -26,10 +26,12 @@
 		setCategories,
 		isDMTarget,
 		openDM,
+		addDMConversation,
+		clearChannelMembers as clearSimpleMembers,
 	} from '$lib/state/channels.svelte';
 	import { markRead } from '$lib/state/notifications.svelte';
 	import { getUnreadCount } from '$lib/state/notifications.svelte';
-	import { getMember } from '$lib/state/members.svelte';
+	import { getMember, clearChannel as clearRichMembers, memberState } from '$lib/state/members.svelte';
 	import { getCursors, getMessage, getMessages, redactMessage, addReaction, removeReaction, updateSendState, addMessage, pinMessage, unpinMessage, isPinned } from '$lib/state/messages.svelte';
 	import type { Message } from '$lib/state/messages.svelte';
 	import { addServer, getActiveServer } from '$lib/state/servers.svelte';
@@ -130,11 +132,13 @@
 	// MONITOR tracking: nicks currently being monitored for presence
 	let monitoredNicks = new Set<string>();
 
+	// Guard against overlapping reconnect attempts
+	let _reconnecting = false;
+
 	/**
 	* Update MONITOR list for the given channel.
-	* Adds nicks in the channel's member list that aren't already monitored,
-	* removes nicks no longer in the active channel (except DM nicks).
-	* Also sends WHO to get initial away status.
+	* Adds nicks in the active channel, prunes nicks not in any joined channel
+	* or DM list. Also sends WHO to get initial away status.
 	*/
 	function updateMonitorForChannel(channel: string): void {
 		if (!conn) return;
@@ -149,17 +153,28 @@
 		const ownNick = userState.nick;
 		if (ownNick) currentNicks.delete(ownNick);
 
-		// Determine nicks to add and remove
+		// Build the full set of nicks that should be monitored:
+		// all nicks in any joined channel + DM partners
+		const allNeeded = new Set<string>();
+		for (const [chName, chData] of channelState.channels) {
+			if (chName.startsWith('#') || chName.startsWith('&')) {
+				for (const nick of chData.members.keys()) {
+					if (nick !== ownNick) allNeeded.add(nick);
+				}
+			}
+		}
+		for (const dm of channelUIState.dmConversations) {
+			allNeeded.add(dm.nick);
+		}
+
+		// Add nicks from active channel not yet monitored
 		const toAdd = [...currentNicks].filter((n) => !monitoredNicks.has(n));
-		const toRemove = [...monitoredNicks].filter((n) => !currentNicks.has(n));
+		// Remove monitored nicks not needed by any channel or DM
+		const toRemove = [...monitoredNicks].filter((n) => !allNeeded.has(n));
 
-		// Keep DM nicks in the monitor list
-		const dmNicks = new Set(channelUIState.dmConversations.map((d) => d.nick));
-		const actualRemove = toRemove.filter((n) => !dmNicks.has(n));
-
-		if (actualRemove.length > 0) {
-			monitor(conn, '-', actualRemove);
-			for (const n of actualRemove) monitoredNicks.delete(n);
+		if (toRemove.length > 0) {
+			monitor(conn, '-', toRemove);
+			for (const n of toRemove) monitoredNicks.delete(n);
 		}
 		if (toAdd.length > 0) {
 			monitor(conn, '+', toAdd);
@@ -330,8 +345,24 @@
 		};
 	}
 
-	/** Emoji selected from picker — send reaction TAGMSG. */
+	/** Open emoji picker for inserting into the message input. */
+	function handleInputEmojiPicker(): void {
+		emojiPickerTarget = '_input_';
+		emojiPickerPosition = {
+			x: Math.max(16, window.innerWidth / 2 - 176),
+			y: Math.max(16, window.innerHeight / 2 - 200),
+		};
+	}
+
+	/** Emoji selected from picker — either insert into input or send reaction TAGMSG. */
 	function handleEmojiSelect(emoji: string): void {
+		if (emojiPickerTarget === '_input_') {
+			// Insert emoji into message input by dispatching a custom event
+			window.dispatchEvent(new CustomEvent('virc:insert-emoji', { detail: { emoji } }));
+			emojiPickerTarget = null;
+			emojiPickerPosition = null;
+			return;
+		}
 		if (!conn || !emojiPickerTarget || !channelUIState.activeChannel) return;
 		tagmsg(conn, channelUIState.activeChannel, {
 			'+draft/react': emoji,
@@ -395,12 +426,21 @@
 		if (!msg || msg.sendState !== 'failed') return;
 
 		updateSendState(channel, msgid, 'sending');
-		try {
-			privmsg(conn, channel, msg.text);
-			updateSendState(channel, msgid, 'sent');
-		} catch {
-			updateSendState(channel, msgid, 'failed');
+		let sent: boolean;
+		if (msg.replyTo) {
+			// Re-emit with the original reply context
+			const tags = `@+draft/reply=${escapeTagValue(msg.replyTo)}`;
+			sent = conn.send(`${tags} PRIVMSG ${channel} :${msg.text}`);
+		} else {
+			sent = privmsg(conn, channel, msg.text);
 		}
+		updateSendState(channel, msgid, sent ? 'sent' : 'failed');
+	}
+
+	/** Clear both simple and rich member lists for a channel (for reconnect). */
+	function clearChannelMembers(channel: string): void {
+		clearSimpleMembers(channel);
+		clearRichMembers(channel);
 	}
 
 	/** Start a rate limit countdown timer. */
@@ -492,28 +532,29 @@
 
 	/**
 	 * Handle a DM voice call: toggle voice connection for a 1:1 call.
-	 * Uses a deterministic room name based on the two participants (sorted).
+	 * Uses a deterministic room name based on the two accounts (sorted).
 	 */
 	async function handleDMVoiceCall(target: string): Promise<void> {
-		// If already in a DM call with this target, disconnect (toggle)
-		const dmRoom = getDMRoomName(target);
-		if (voiceState.currentRoom === dmRoom && voiceRoom) {
-			await disconnectVoice(voiceRoom);
-			voiceRoom = null;
-			return;
-		}
-
-		// If in another voice session, disconnect first
-		if (voiceRoom) {
-			const prevChannel = voiceState.currentRoom;
-			await disconnectVoice(voiceRoom);
-			voiceRoom = null;
-			if (conn && prevChannel && prevChannel.startsWith('#')) {
-				conn.send(`PART ${prevChannel}`);
-			}
-		}
-
 		try {
+			const dmRoom = getDMRoomName(target);
+
+			// If already in a DM call with this target, disconnect (toggle)
+			if (voiceState.currentRoom === dmRoom && voiceRoom) {
+				await disconnectVoice(voiceRoom);
+				voiceRoom = null;
+				return;
+			}
+
+			// If in another voice session, disconnect first
+			if (voiceRoom) {
+				const prevChannel = voiceState.currentRoom;
+				await disconnectVoice(voiceRoom);
+				voiceRoom = null;
+				if (conn && prevChannel && prevChannel.startsWith('#')) {
+					conn.send(`PART ${prevChannel}`);
+				}
+			}
+
 			// Request mic permission
 			const permStream = await navigator.mediaDevices.getUserMedia({ audio: true });
 			for (const track of permStream.getTracks()) track.stop();
@@ -546,12 +587,57 @@
 	}
 
 	/**
+	 * Resolve the account name for a DM target nick.
+	 * Checks DM conversations first, then channel member lists.
+	 */
+	function resolveAccountForNick(target: string): string | null {
+		const lowerTarget = target.toLowerCase();
+
+		for (const dm of channelUIState.dmConversations) {
+			if (dm.nick.toLowerCase() === lowerTarget && dm.account) {
+				return dm.account;
+			}
+		}
+
+		for (const ch of channelState.channels.values()) {
+			for (const member of ch.members.values()) {
+				if (member.nick.toLowerCase() === lowerTarget && member.account) {
+					addDMConversation(target, member.account);
+					return member.account;
+				}
+			}
+		}
+
+		for (const map of memberState.channels.values()) {
+			for (const member of map.values()) {
+				if (member.nick.toLowerCase() === lowerTarget && member.account) {
+					addDMConversation(target, member.account);
+					return member.account;
+				}
+			}
+		}
+
+		return null;
+	}
+
+	/**
 	 * Generate a deterministic room name for a DM voice call.
-	 * Sorts the two nicks alphabetically so both participants get the same room.
+	 * Sorts the two account names alphabetically so both participants get the same room.
 	 */
 	function getDMRoomName(target: string): string {
-		const nicks = [userState.nick ?? '', target].sort();
-		return `dm:${nicks[0]}:${nicks[1]}`;
+		const selfAccount = userState.account ?? '';
+		if (!selfAccount) {
+			throw new Error('Not authenticated');
+		}
+
+		const targetAccount = resolveAccountForNick(target);
+		if (!targetAccount) {
+			throw new Error(`Cannot start DM call until ${target}'s account is known`);
+		}
+
+		// Lowercase to match server-side comparison (livekit.ts uses toLowerCase)
+		const accounts = [selfAccount.toLowerCase(), targetAccount.toLowerCase()].sort();
+		return `dm:${accounts[0]}:${accounts[1]}`;
 	}
 
 	/**
@@ -559,16 +645,22 @@
 	 * If already in a call, just toggle the camera.
 	 */
 	async function handleDMVideoCall(target: string): Promise<void> {
-		const dmRoom = getDMRoomName(target);
-		// If already in the call, just toggle camera
-		if (voiceState.currentRoom === dmRoom && voiceRoom) {
-			await toggleVideoRoom(voiceRoom);
-			return;
-		}
-		// Not in a call yet — start voice call first, then enable camera
-		await handleDMVoiceCall(target);
-		if (voiceRoom) {
-			await toggleVideoRoom(voiceRoom);
+		try {
+			const dmRoom = getDMRoomName(target);
+			// If already in the call, just toggle camera
+			if (voiceState.currentRoom === dmRoom && voiceRoom) {
+				await toggleVideoRoom(voiceRoom);
+				return;
+			}
+			// Not in a call yet — start voice call first, then enable camera
+			await handleDMVoiceCall(target);
+			if (voiceRoom) {
+				await toggleVideoRoom(voiceRoom);
+			}
+		} catch (e) {
+			const msg = e instanceof Error ? e.message : String(e);
+			voiceError = `Video call failed: ${msg}`;
+			setTimeout(() => { voiceError = null; }, 5_000);
 		}
 	}
 
@@ -596,8 +688,12 @@
 	* and auto-join channels.
 	*/
 	async function initConnection(): Promise<void> {
-		const creds = getCredentials();
-		if (!creds) return;
+		const creds = await getCredentials();
+		if (!creds) {
+			error = 'No saved credentials. Please log in.';
+			initializing = false;
+			return;
+		}
 
 		// Rehydrate user state from localStorage
 		rehydrate();
@@ -607,6 +703,7 @@
 			?? (import.meta.env.DEV ? `ws://${window.location.hostname}:8097` : null);
 		if (!serverUrl) {
 			error = 'No server URL configured. Please log in again.';
+			initializing = false;
 			return;
 		}
 		const filesUrl = localStorage.getItem('virc:filesUrl') ?? null;
@@ -731,6 +828,10 @@
 			const msg = e instanceof Error ? e.message : String(e);
 			error = msg;
 			setDisconnected(msg);
+			// Clean up the partially-connected socket to prevent background reconnect attempts
+			if (conn) {
+				try { conn.disconnect(); } catch { /* ignore */ }
+			}
 			initializing = false;
 		}
 	}
@@ -741,9 +842,11 @@
 	*/
 	async function handleReconnect(filesUrl: string | null): Promise<void> {
 		if (!conn) return;
+		if (_reconnecting) return; // Prevent overlapping reconnect attempts
+		_reconnecting = true;
 
-		const creds = getCredentials();
-		if (!creds) return;
+		const creds = await getCredentials();
+		if (!creds) { _reconnecting = false; return; }
 
 		try {
 			// Clear stale handler state (batch buffers, typing timers)
@@ -765,15 +868,27 @@
 			if (filesUrl) {
 				try {
 					await fetchToken(filesUrl, creds.account, creds.password);
+					startTokenRefresh(filesUrl, () => {
+						authExpired = true;
+					});
 				} catch {
 					// Non-fatal — chat still works without JWT
 				}
 			}
 
-			// 5. Re-join all previously joined channels
+			// 5. Re-join all previously joined channels (suppress self-JOIN system messages)
 			const joinedChannels = Array.from(channelState.channels.keys()).filter(
 				(ch) => ch.startsWith('#') || ch.startsWith('&')
 			);
+
+			// Clear stale member lists before re-joining. The server sends fresh
+			// NAMES after each JOIN which will repopulate them. Without this,
+			// users who left while we were disconnected would remain as ghosts.
+			for (const ch of joinedChannels) {
+				clearChannelMembers(ch);
+			}
+
+			setSuppressSelfJoins(joinedChannels.length);
 			if (joinedChannels.length > 0) {
 				join(conn, joinedChannels);
 			}
@@ -823,6 +938,8 @@
 		} catch (e) {
 			console.error('Reconnect recovery failed:', e);
 			// Connection will retry via the existing backoff mechanism
+		} finally {
+			_reconnecting = false;
 		}
 	}
 
@@ -917,13 +1034,9 @@
 
 	/** Called by MessageInput after a successful send while editing. */
 	function handleEditComplete(): void {
-		if (!editingMsgid || !editingChannel || !conn) {
-			editingMsgid = null;
-			editingChannel = null;
-			return;
-		}
-		redact(conn, editingChannel, editingMsgid);
-		redactMessage(editingChannel, editingMsgid);
+		// The edit is handled entirely by the +virc/edit tag on the PRIVMSG.
+		// The server echoes it back, and handlePrivmsg updates the message in-place
+		// via updateMessageText(). No REDACT needed — that would hide the message.
 		editingMsgid = null;
 		editingChannel = null;
 	}
@@ -1260,6 +1373,18 @@
 		}
 	});
 
+	/** Emergency logout — works even during connecting/error state. */
+	function forceLogout(): void {
+		try { if (conn) { conn.disconnect(); conn = null; } } catch { /* ignore */ }
+		// Best-effort credential cleanup (async, but localStorage clears synchronously)
+		void clearCredentials();
+		clearToken();
+		localStorage.removeItem('virc:serverUrl');
+		localStorage.removeItem('virc:filesUrl');
+		// Hard navigate — bypasses SvelteKit lifecycle that may be blocked
+		window.location.href = '/login';
+	}
+
 	onMount(() => {
 		setupKeybindings();
 		document.addEventListener('keydown', handlePTTKeyDown);
@@ -1344,11 +1469,13 @@
 				{#if error}
 					<div class="error-banner">
 						<span>Connection error: {error}</span>
+						<button class="error-logout-btn" onclick={forceLogout}>Log Out</button>
 					</div>
 				{:else if connectionState.status === 'connecting' || initializing}
 					<div class="splash-screen">
 						<div class="splash-spinner"></div>
 						<span class="splash-text">Connecting to server...</span>
+						<button class="splash-logout-btn" onclick={forceLogout}>Log Out</button>
 					</div>
 				{:else if !channelUIState.activeChannel}
 					<div class="empty-state">
@@ -1397,6 +1524,7 @@
 				disconnected={isDisconnected}
 				{rateLimitSeconds}
 				filesUrl={activeFilesUrl}
+				onemojipicker={handleInputEmojiPicker}
 			/>
 		{:else}
 			<div class="message-input-area">
@@ -1560,11 +1688,26 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
+		gap: 12px;
 		padding: 8px 16px;
 		background: var(--danger);
 		color: #fff;
 		font-size: var(--font-sm);
 		font-weight: var(--weight-medium);
+	}
+
+	.error-logout-btn {
+		padding: 4px 12px;
+		background: rgba(255, 255, 255, 0.2);
+		border: 1px solid rgba(255, 255, 255, 0.4);
+		border-radius: 4px;
+		color: #fff;
+		font-size: var(--font-sm);
+		cursor: pointer;
+	}
+
+	.error-logout-btn:hover {
+		background: rgba(255, 255, 255, 0.3);
 	}
 
 	.voice-error-banner {
@@ -1612,6 +1755,23 @@
 	.splash-text {
 		color: var(--text-secondary);
 		font-size: var(--font-base);
+	}
+
+	.splash-logout-btn {
+		margin-top: 8px;
+		padding: 6px 16px;
+		background: none;
+		border: 1px solid var(--surface-highest);
+		border-radius: 4px;
+		color: var(--text-secondary);
+		font-size: var(--font-sm);
+		cursor: pointer;
+		transition: color var(--duration-channel), border-color var(--duration-channel);
+	}
+
+	.splash-logout-btn:hover {
+		color: var(--text-primary);
+		border-color: var(--text-muted);
 	}
 
 	@keyframes splash-spin {

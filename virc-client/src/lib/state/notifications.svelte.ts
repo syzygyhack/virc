@@ -93,20 +93,30 @@ export function resetNotificationLevels(): void {
 	}
 }
 
-/** Reactive notification store — components read this directly. */
-export const notificationState: NotificationStore = $state({
-	channels: new Map(),
-});
+/**
+ * Reactive notification store.
+ * Uses version counter pattern (like messages/members) because
+ * Svelte 5 $state doesn't deeply track Map mutations.
+ */
+const _channels = new Map<string, ChannelNotification>();
+let _version = $state(0);
+
+function notify(): void { _version++; }
+
+/** Legacy export for components that read the store directly. */
+export const notificationState = {
+	get channels() { void _version; return _channels; },
+};
 
 function ensureChannel(channel: string): ChannelNotification {
-	if (!notificationState.channels.has(channel)) {
-		notificationState.channels.set(channel, {
+	if (!_channels.has(channel)) {
+		_channels.set(channel, {
 			unreadCount: 0,
 			mentionCount: 0,
 			lastReadMsgid: null,
 		});
 	}
-	return notificationState.channels.get(channel)!;
+	return _channels.get(channel)!;
 }
 
 /**
@@ -130,6 +140,7 @@ export function incrementUnread(channel: string, isMention: boolean): void {
 	if (isMention) {
 		ch.mentionCount++;
 	}
+	notify();
 }
 
 /**
@@ -141,30 +152,36 @@ export function markRead(channel: string, msgid: string): void {
 	ch.unreadCount = 0;
 	ch.mentionCount = 0;
 	ch.lastReadMsgid = msgid;
+	notify();
 }
 
 /** Get the unread message count for a channel. Returns 0 if not tracked. */
 export function getUnreadCount(channel: string): number {
-	return notificationState.channels.get(channel)?.unreadCount ?? 0;
+	void _version;
+	return _channels.get(channel)?.unreadCount ?? 0;
 }
 
 /** Get the mention count for a channel. Returns 0 if not tracked. */
 export function getMentionCount(channel: string): number {
-	return notificationState.channels.get(channel)?.mentionCount ?? 0;
+	void _version;
+	return _channels.get(channel)?.mentionCount ?? 0;
 }
 
 /** Get the last read message ID for a channel. Returns null if not set. */
 export function getLastReadMsgid(channel: string): string | null {
-	return notificationState.channels.get(channel)?.lastReadMsgid ?? null;
+	void _version;
+	return _channels.get(channel)?.lastReadMsgid ?? null;
 }
 
 /** Set the last read message ID without resetting counts (e.g. from server sync). */
 export function setLastReadMsgid(channel: string, msgid: string): void {
 	const ch = ensureChannel(channel);
 	ch.lastReadMsgid = msgid;
+	notify();
 }
 
 /** Reset all notification state. */
 export function resetNotifications(): void {
-	notificationState.channels.clear();
+	_channels.clear();
+	notify();
 }

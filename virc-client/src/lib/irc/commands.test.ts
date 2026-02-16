@@ -10,7 +10,8 @@ import {
 	who,
 	names,
 	redact,
-	topic
+	topic,
+	escapeTagValue,
 } from './commands';
 import type { IRCConnection } from './connection';
 
@@ -170,6 +171,39 @@ describe('IRC command helpers', () => {
 			const { conn, sent } = createMockConn();
 			redact(conn, '#test', 'abc123', 'spam message');
 			expect(sent).toEqual(['REDACT #test abc123 :spam message']);
+		});
+	});
+
+	describe('escapeTagValue', () => {
+		it('escapes backslashes first', () => {
+			expect(escapeTagValue('\\')).toBe('\\\\');
+		});
+
+		it('escapes semicolons as \\;', () => {
+			expect(escapeTagValue(';')).toBe('\\;');
+			expect(escapeTagValue('a;b;c')).toBe('a\\;b\\;c');
+		});
+
+		it('escapes spaces as \\s', () => {
+			expect(escapeTagValue('hello world')).toBe('hello\\sworld');
+		});
+
+		it('escapes CR as \\r', () => {
+			expect(escapeTagValue('\r')).toBe('\\r');
+		});
+
+		it('escapes LF as \\n', () => {
+			expect(escapeTagValue('\n')).toBe('\\n');
+		});
+
+		it('handles combined escapes in correct order', () => {
+			// backslash must be escaped first to avoid double-escaping
+			expect(escapeTagValue('a\\;b c\r\n')).toBe('a\\\\\\;b\\sc\\r\\n');
+		});
+
+		it('passes through safe characters unchanged', () => {
+			expect(escapeTagValue('hello123')).toBe('hello123');
+			expect(escapeTagValue('')).toBe('');
 		});
 	});
 

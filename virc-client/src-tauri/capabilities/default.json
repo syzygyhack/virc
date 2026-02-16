@@ -9,6 +9,7 @@
     "core:default",
     "opener:default",
     "core:event:default",
-    "core:window:default"
+    "core:window:default",
+    "keyring:default"
   ]
 }

@@ -24,13 +24,13 @@ describe('appSettings', () => {
 	});
 
 	describe('systemMessageDisplay', () => {
-		it('defaults to all', () => {
-			expect(appSettings.systemMessageDisplay).toBe('all');
+		it('defaults to smart', () => {
+			expect(appSettings.systemMessageDisplay).toBe('smart');
 		});
 
-		it('can be set to smart', () => {
-			appSettings.systemMessageDisplay = 'smart';
-			expect(appSettings.systemMessageDisplay).toBe('smart');
+		it('can be set to all', () => {
+			appSettings.systemMessageDisplay = 'all';
+			expect(appSettings.systemMessageDisplay).toBe('all');
 		});
 
 		it('can be set to none', () => {
@@ -47,7 +47,7 @@ describe('appSettings', () => {
 		it('resets to default', () => {
 			appSettings.systemMessageDisplay = 'none';
 			resetAppSettings();
-			expect(appSettings.systemMessageDisplay).toBe('all');
+			expect(appSettings.systemMessageDisplay).toBe('smart');
 		});
 	});
 

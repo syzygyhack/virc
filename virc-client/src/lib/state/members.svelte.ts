@@ -214,6 +214,15 @@ export function renameMember(oldNick: string, newNick: string): void {
 	notify();
 }
 
+/** Clear all members from a specific channel (for reconnect). */
+export function clearChannel(channel: string): void {
+	const map = _channels.get(channel);
+	if (map) {
+		map.clear();
+		notify();
+	}
+}
+
 /** Reset all member state. */
 export function resetMembers(): void {
 	_channels.clear();

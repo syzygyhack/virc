@@ -128,7 +128,11 @@ export function addMessage(target: string, msg: Message): void {
 	msgs.push(msg);
 
 	if (msgs.length > MAX_MESSAGES_PER_CHANNEL) {
-		msgs.splice(0, msgs.length - MAX_MESSAGES_PER_CHANNEL);
+		const evicted = msgs.splice(0, msgs.length - MAX_MESSAGES_PER_CHANNEL);
+		// Prune editMap entries for evicted messages to prevent unbounded growth
+		for (const m of evicted) {
+			editMap.delete(m.msgid);
+		}
 	}
 
 	updateCursors(target);
@@ -205,11 +209,18 @@ export function updateMessageText(target: string, originalMsgid: string, newText
 }
 
 /**
- * Resolve an edit chain: given a msgid, return the latest edit msgid.
+ * Resolve an edit chain: given a msgid, follow the chain to the latest edit msgid.
  * If the msgid has no edit chain, returns the input msgid unchanged.
  */
 export function resolveEditChain(msgid: string): string {
-	return editMap.get(msgid) ?? msgid;
+	let current = msgid;
+	// Follow the chain (with a safety limit to prevent infinite loops)
+	for (let i = 0; i < 50; i++) {
+		const next = editMap.get(current);
+		if (!next || next === current) break;
+		current = next;
+	}
+	return current;
 }
 
 /** Add a reaction to a message. */
@@ -246,7 +257,8 @@ export function removeReaction(
 
 /**
  * Prepend messages to the beginning of a channel buffer (for history loading).
- * Evicts from the end if the total exceeds the max capacity.
+ * When the combined length exceeds max capacity, trims from the end (newest)
+ * since the user is scrolling up to view older history.
  */
 export function prependMessages(target: string, msgs: Message[]): void {
 	ensureChannel(target);
@@ -254,7 +266,8 @@ export function prependMessages(target: string, msgs: Message[]): void {
 	const combined = [...msgs, ...existing];
 
 	if (combined.length > MAX_MESSAGES_PER_CHANNEL) {
-		combined.splice(MAX_MESSAGES_PER_CHANNEL);
+		// Drop newest (from the end) — user is scrolling up, keep visible history
+		combined.length = MAX_MESSAGES_PER_CHANNEL;
 	}
 
 	channelMessages.set(target, combined);

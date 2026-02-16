@@ -34,6 +34,11 @@
 	let error: string | null = $state(null);
 	let statusMessage: string | null = $state(null);
 
+	/** Validate an IRC nickname: 1–20 chars, no spaces or control characters. */
+	function isValidNick(nick: string): boolean {
+		return /^[^\s\x00-\x1f,:*?@!]{1,20}$/.test(nick);
+	}
+
 	/**
 	* Perform SASL login: connect, negotiate caps, authenticate, store creds,
 	* fetch JWT, start refresh, navigate to /chat.
@@ -45,6 +50,10 @@
 		}
 		if (!username.trim() || !password.trim()) {
 			error = 'Username and password are required.';
+			return;
+		}
+		if (!isValidNick(username.trim())) {
+			error = 'Invalid username. Use 1-20 characters, no spaces or special characters.';
 			return;
 		}
 
@@ -73,8 +82,8 @@
 			statusMessage = 'Authenticating...';
 			await authenticateSASL(conn, username, password);
 
-			// 4. Store credentials in session
-			login(username, password);
+			// 4. Store credentials in session (async — writes to OS keychain in Tauri)
+			await login(username, password);
 
 			// 5. Discover files API and fetch JWT
 			statusMessage = 'Discovering server configuration...';
@@ -134,6 +143,10 @@
 			error = 'Username and password are required.';
 			return;
 		}
+		if (!isValidNick(username.trim())) {
+			error = 'Invalid username. Use 1-20 characters, no spaces or special characters.';
+			return;
+		}
 
 		loading = true;
 		error = null;
@@ -164,7 +177,7 @@
 
 			// 5. Register via NickServ
 			statusMessage = 'Registering account...';
-			conn.send(`NS REGISTER ${password}`);
+			conn.send(`NS REGISTER :${password}`);
 			await waitForRegistration(conn);
 
 			// 6. Disconnect and reconnect for SASL login
@@ -186,7 +199,7 @@
 			statusMessage = 'Authenticating...';
 			await authenticateSASL(conn, username, password);
 
-			login(username, password);
+			await login(username, password);
 
 			statusMessage = 'Discovering server configuration...';
 			const discoveredFilesUrl = await discoverFilesUrl(serverUrl);

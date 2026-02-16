@@ -79,6 +79,12 @@ const typingTimers = new Map<string, Map<string, ReturnType<typeof setTimeout>>>
 const TYPING_TIMEOUT_MS = 6_000;
 
 /**
+ * Counter of expected self-JOIN messages to suppress during reconnect.
+ * Decremented on each self-JOIN; when 0, JOINs produce system messages normally.
+ */
+let _suppressSelfJoinCount = 0;
+
+/**
  * Mark a user as typing. Updates the shared reactive store and sets
  * a timeout to auto-clear after TYPING_TIMEOUT_MS.
  */
@@ -239,6 +245,9 @@ export function handleMessage(parsed: ParsedMessage): void {
 		case 'QUIT':
 			handleQuit(parsed);
 			break;
+		case 'KICK':
+			handleKick(parsed);
+			break;
 		case 'NICK':
 			handleNick(parsed);
 			break;
@@ -285,6 +294,13 @@ export function handleMessage(parsed: ParsedMessage): void {
 				activeConn.send(`PONG :${token}`);
 			}
 			break;
+		case '001': // RPL_WELCOME — confirmed nick from server
+			handleWelcome(parsed);
+			break;
+		case 'ERROR':
+			// Server error before disconnect — log it
+			console.error('IRC ERROR:', parsed.params[0] ?? '');
+			break;
 		default:
 			break;
 	}
@@ -298,7 +314,8 @@ function handlePrivmsg(parsed: ParsedMessage): void {
 	// Determine the buffer target: if the message is addressed to our nick
 	// (i.e. a DM), use the sender's nick as the buffer key so all DMs
 	// with that person end up in the same buffer.
-	const isIncomingDM = rawTarget === userState.nick;
+	// Case-insensitive comparison: IRC nicks are case-insensitive per RFC 2812.
+	const isIncomingDM = rawTarget.toLowerCase() === userState.nick?.toLowerCase();
 	const bufferTarget = isIncomingDM ? senderNick : rawTarget;
 	const msg = privmsgToMessage(parsed, bufferTarget);
 
@@ -345,8 +362,11 @@ function handlePrivmsg(parsed: ParsedMessage): void {
 }
 
 function handleTagmsg(parsed: ParsedMessage): void {
-	const target = parsed.params[0];
+	const rawTarget = parsed.params[0];
 	const nick = parsed.source?.nick ?? '';
+	// DM routing: if target is our nick, use sender's nick as buffer key
+	// Case-insensitive: IRC nicks are case-insensitive per RFC 2812.
+	const target = rawTarget.toLowerCase() === userState.nick?.toLowerCase() ? nick : rawTarget;
 
 	// Handle reactions: +draft/react tag (toggle semantics)
 	const reactEmoji = parsed.tags['+draft/react'];
@@ -379,11 +399,16 @@ function handleTagmsg(parsed: ParsedMessage): void {
 }
 
 function handleRedact(parsed: ParsedMessage): void {
-	const target = parsed.params[0];
+	const rawTarget = parsed.params[0];
 	const msgid = parsed.params[1];
-	if (target && msgid) {
-		redactMessage(target, msgid);
-	}
+	if (!rawTarget || !msgid) return;
+
+	// DM buffer routing: if the target is our nick, the redact applies to
+	// a message in the sender's DM buffer.
+	const senderNick = parsed.source?.nick ?? '';
+	const isIncomingDM = rawTarget.toLowerCase() === userState.nick?.toLowerCase();
+	const bufferTarget = isIncomingDM ? senderNick : rawTarget;
+	redactMessage(bufferTarget, msgid);
 }
 
 function handleJoin(parsed: ParsedMessage): void {
@@ -403,6 +428,13 @@ function handleJoin(parsed: ParsedMessage): void {
 		awayReason: null,
 		presence: 'online',
 	});
+
+	// Skip system message for own joins during reconnect (Discord-style: users are always in channels)
+	const isSelf = nick === userState.nick;
+	if (isSelf && _suppressSelfJoinCount > 0) {
+		_suppressSelfJoinCount--;
+		return;
+	}
 
 	// Add system message to channel buffer
 	const msg = systemMessage('join', channel, nick, `${nick} has joined ${channel}`, parsed);
@@ -449,6 +481,43 @@ function handleQuit(parsed: ParsedMessage): void {
 	for (const channel of channelsWithNick) {
 		const msg = systemMessage('quit', channel, nick, `${nick} has quit${reason}`, parsed);
 		addMessage(channel, msg);
+	}
+}
+
+function handleKick(parsed: ParsedMessage): void {
+	// :op!user@host KICK #channel target :reason
+	const channel = parsed.params[0];
+	const target = parsed.params[1] ?? '';
+	const reason = parsed.params[2] ? ` (${parsed.params[2]})` : '';
+	if (!channel || !target) return;
+
+	removeMember(channel, target);
+	removeRichMember(channel, target);
+
+	if (target === userState.nick) {
+		// We were kicked — remove channel from sidebar
+		clearMessages(channel);
+		removeChannel(channel);
+		if (getActiveChannel() === channel) {
+			const textChannels = channelUIState.categories
+				.filter((c) => !c.voice)
+				.flatMap((c) => c.channels);
+			setActiveChannel(textChannels[0] ?? null);
+		}
+		return;
+	}
+
+	const kicker = parsed.source?.nick ?? '';
+	const msg = systemMessage('part', channel, target, `${target} was kicked by ${kicker}${reason}`, parsed);
+	addMessage(channel, msg);
+}
+
+/** Handle RPL_WELCOME (001) — update confirmed nick from server. */
+function handleWelcome(parsed: ParsedMessage): void {
+	// :server 001 confirmedNick :Welcome to the network
+	const confirmedNick = parsed.params[0];
+	if (confirmedNick && confirmedNick !== userState.nick) {
+		userState.nick = confirmedNick;
 	}
 }
 
@@ -613,10 +682,24 @@ function handleBatchedMessage(batchRef: string, parsed: ParsedMessage): void {
 		// Apply the same DM buffer routing as live messages: if the message
 		// is addressed to our nick (incoming DM), use the sender's nick as
 		// the buffer key.
-		const isIncomingDM = rawTarget === userState.nick;
+		const isIncomingDM = rawTarget.toLowerCase() === userState.nick?.toLowerCase();
 		const bufferTarget = isIncomingDM ? senderNick : rawTarget;
 
 		const msg = privmsgToMessage(parsed, bufferTarget);
+
+		// Handle +virc/edit in history: update the earlier message in the
+		// batch instead of adding a duplicate.
+		const editOriginalMsgid = parsed.tags['+virc/edit'];
+		if (editOriginalMsgid) {
+			const original = batch.messages.find((m) => m.msgid === editOriginalMsgid);
+			if (original) {
+				original.text = msg.text;
+				original.isEdited = true;
+				return;
+			}
+			// Original not in batch — fall through and add as a new message
+		}
+
 		batch.messages.push(msg);
 	}
 }
@@ -746,15 +829,8 @@ function handleWhoReply(parsed: ParsedMessage): void {
 	if (!channel || !nick) return;
 
 	const isAway = flags.startsWith('G');
-	const member = getRichMember(channel, nick);
-	if (member) {
-		member.isAway = isAway;
-		if (isAway) {
-			member.presence = 'idle';
-		} else {
-			member.presence = 'online';
-		}
-	}
+	// Use updatePresence which calls notify() for reactivity
+	updatePresence(nick, isAway);
 }
 
 /**
@@ -771,15 +847,14 @@ function handleWhoxReply(parsed: ParsedMessage): void {
 	const isAway = flags.startsWith('G');
 	const resolvedAccount = account === '0' ? '' : account;
 
-	// Update member across all channels where they appear
+	// Update account field directly, then use updatePresence for reactivity
 	for (const map of richMemberState.channels.values()) {
 		const member = map.get(nick);
-		if (member) {
+		if (member && resolvedAccount) {
 			member.account = resolvedAccount;
-			member.isAway = isAway;
-			member.presence = isAway ? 'idle' : 'online';
 		}
 	}
+	updatePresence(nick, isAway);
 }
 
 /**
@@ -828,6 +903,11 @@ export function registerHandler(conn: IRCConnection): void {
 	conn.on('message', activeHandler);
 }
 
+/** Set the number of expected self-JOINs to suppress (during reconnect). */
+export function setSuppressSelfJoins(count: number): void {
+	_suppressSelfJoinCount = count;
+}
+
 /** Clear all batch, typing, and handler state (for testing or reconnect). */
 export function resetHandlerState(): void {
 	activeBatches.clear();
@@ -838,6 +918,7 @@ export function resetHandlerState(): void {
 	}
 	typingTimers.clear();
 	resetTyping();
+	_suppressSelfJoinCount = 0;
 	activeHandler = null;
 	activeConn = null;
 }

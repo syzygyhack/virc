@@ -80,7 +80,7 @@ export function formatMessage(command: string, ...params: string[]): string {
 
 	const last = params[params.length - 1];
 	const middle = params.slice(0, -1);
-	const needsTrailing = last.includes(' ') || last.startsWith(':');
+	const needsTrailing = last.includes(' ') || last.startsWith(':') || last.length === 0;
 
 	if (needsTrailing) {
 		const parts = [command, ...middle, `:${last}`];

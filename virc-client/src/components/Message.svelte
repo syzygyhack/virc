@@ -43,6 +43,8 @@
 
 	let isFailed = $derived(message.sendState === 'failed');
 	let isSending = $derived(message.sendState === 'sending');
+	/** Messages with local-only msgids can't be redacted on the server. */
+	let canDelete = $derived(!message.msgid.startsWith('_local_'));
 	let devTooltip = $derived(appSettings.developerMode ? `msgid: ${message.msgid}` : undefined);
 
 	function handleRetry() {
@@ -56,15 +58,25 @@
 
 	let color = $derived(nickColor(message.account));
 
-	let renderedText = $derived.by(() => {
-		if (message.isRedacted) return '';
-		return renderMessage(message.text, userState.account ?? '');
-	});
-
 	let mediaUrls = $derived.by(() => {
 		if (message.isRedacted) return [];
 		return extractMediaUrls(message.text);
 	});
+
+	/** Strip embedded media URLs from the displayed text so only the inline previews show. */
+	let renderedText = $derived.by(() => {
+		if (message.isRedacted) return '';
+		let text = message.text;
+		if (mediaUrls.length > 0) {
+			for (const media of mediaUrls) {
+				text = text.replace(media.url, '').trim();
+			}
+		}
+		return renderMessage(text, userState.account ?? '');
+	});
+
+	/** True when the message is only media URLs with no surrounding text. */
+	let isMediaOnly = $derived(mediaUrls.length > 0 && renderedText.replace(/<[^>]*>/g, '').trim() === '');
 
 	let previewUrl = $derived.by(() => {
 		if (message.isRedacted) return null;
@@ -208,10 +220,13 @@
 			}
 		}
 		// Delay to avoid catching the opening click
-		requestAnimationFrame(() => {
+		const rafId = requestAnimationFrame(() => {
 			window.addEventListener('click', handleClickOutside, { capture: true });
 		});
-		return () => window.removeEventListener('click', handleClickOutside, { capture: true });
+		return () => {
+			cancelAnimationFrame(rafId);
+			window.removeEventListener('click', handleClickOutside, { capture: true });
+		};
 	});
 
 	function handleToggleReaction(emoji: string) {
@@ -272,9 +287,11 @@
 								{pinned ? 'Unpin Message' : 'Pin Message'}
 							</button>
 						{/if}
-						<button class="more-menu-item more-menu-item-danger" onclick={(e) => handleMore(e)}>
-							Delete Message
-						</button>
+						{#if canDelete}
+							<button class="more-menu-item more-menu-item-danger" onclick={(e) => handleMore(e)}>
+								Delete Message
+							</button>
+						{/if}
 					</div>
 				{/if}
 			</div>
@@ -307,7 +324,7 @@
 		<div class="compact-text">
 			{#if message.isRedacted}
 				<span class="message-text redacted">[message deleted]</span>
-			{:else}
+			{:else if !isMediaOnly}
 				<span class="message-text">{@html renderedText}</span>
 			{/if}
 		</div>
@@ -447,9 +464,11 @@
 								{pinned ? 'Unpin Message' : 'Pin Message'}
 							</button>
 						{/if}
-						<button class="more-menu-item more-menu-item-danger" onclick={(e) => handleMore(e)}>
-							Delete Message
-						</button>
+						{#if canDelete}
+							<button class="more-menu-item more-menu-item-danger" onclick={(e) => handleMore(e)}>
+								Delete Message
+							</button>
+						{/if}
 					</div>
 				{/if}
 			</div>
@@ -485,7 +504,9 @@
 				{#if message.isRedacted}
 					<div class="message-text redacted">[message deleted]</div>
 				{:else}
-					<div class="message-text">{@html renderedText}</div>
+					{#if !isMediaOnly}
+						<div class="message-text">{@html renderedText}</div>
+					{/if}
 					{#if mediaUrls.length > 0}
 						<div class="media-previews">
 							{#each mediaUrls as media (media.url)}
@@ -548,7 +569,9 @@
 			{#if message.isRedacted}
 				<div class="message-text redacted">[message deleted]</div>
 			{:else}
-				<div class="message-text">{@html renderedText}</div>
+				{#if !isMediaOnly}
+					<div class="message-text">{@html renderedText}</div>
+				{/if}
 				{#if mediaUrls.length > 0}
 					<div class="media-previews">
 						{#each mediaUrls as media (media.url)}

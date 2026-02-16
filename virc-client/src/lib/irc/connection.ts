@@ -21,7 +21,6 @@ const CONNECT_TIMEOUT_MS = 10_000;
 export class IRCConnection {
 	private url: string;
 	private ws: WebSocket | null = null;
-	private buffer = '';
 	private listeners = new Map<EventName, ((...args: any[]) => void)[]>();
 	private intentionalClose = false;
 	private reconnectAttempt = 0;
@@ -41,7 +40,6 @@ export class IRCConnection {
 		return new Promise<void>((resolve, reject) => {
 			this.intentionalClose = false;
 			this.state = 'connecting';
-			this.buffer = '';
 			let settled = false;
 
 			const timeout = setTimeout(() => {
@@ -105,10 +103,12 @@ export class IRCConnection {
 		if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
 			return false;
 		}
+		// Strip CR/LF to prevent IRC command injection via user input
+		const safe = line.replace(/[\r\n]/g, '');
 		if (appSettings.showRawIrc) {
-			pushRawLine('out', line);
+			pushRawLine('out', safe);
 		}
-		this.ws.send(line + '\r\n');
+		this.ws.send(safe + '\r\n');
 		return true;
 	}
 
@@ -164,29 +164,27 @@ export class IRCConnection {
 	/**
 	 * Buffer incoming data and emit complete IRC lines.
 	 *
+	 * Each WebSocket message is treated as a self-contained frame.
 	 * Handles both framing styles:
-	 *   - CRLF-delimited streams (multiple lines per WebSocket frame)
-	 *   - Bare frames (one IRC line per WebSocket message, no trailing CRLF —
+	 *   - CRLF-delimited (multiple lines per frame)
+	 *   - Bare frames (one IRC line per message, no trailing CRLF —
 	 *     this is how Ergo delivers lines over WebSocket)
+	 *
+	 * Unlike TCP, WebSocket messages are not fragmented across onmessage
+	 * calls, so we don't need to buffer across frames.
 	 */
 	private handleData(data: string): void {
-		this.buffer += data;
-
-		let idx: number;
-		while ((idx = this.buffer.indexOf('\r\n')) !== -1) {
-			const line = this.buffer.slice(0, idx);
-			this.buffer = this.buffer.slice(idx + 2);
-			if (line.length > 0) {
-				this.emit('message', line);
+		// If the data contains CRLF, split on it
+		if (data.includes('\r\n')) {
+			const lines = data.split('\r\n');
+			for (const line of lines) {
+				if (line.length > 0) {
+					this.emit('message', line);
+				}
 			}
-		}
-
-		// If the buffer has content but no CRLF, this is a bare WebSocket
-		// frame (one complete IRC line without a trailing delimiter).
-		if (this.buffer.length > 0 && !this.buffer.includes('\r\n')) {
-			const line = this.buffer;
-			this.buffer = '';
-			this.emit('message', line);
+		} else if (data.length > 0) {
+			// Bare frame: single IRC line without CRLF delimiter
+			this.emit('message', data);
 		}
 	}
 
@@ -210,7 +208,6 @@ export class IRCConnection {
 	 * Includes a timeout to prevent hanging handshakes from blocking reconnection.
 	 */
 	private attemptReconnect(): void {
-		this.buffer = '';
 		const ws = new WebSocket(this.url);
 		this.ws = ws;
 		let settled = false;
@@ -232,6 +229,15 @@ export class IRCConnection {
 			this.state = 'connected';
 			this.reconnectAttempt = 0;
 			this.emit('reconnected');
+
+			// Re-assign onclose for the post-handshake phase so that any
+			// subsequent close triggers reconnect instead of silently dying.
+			ws.onclose = (ev: CloseEvent) => {
+				this.emit('close', ev);
+				if (!this.intentionalClose) {
+					this.scheduleReconnect();
+				}
+			};
 		};
 
 		ws.onmessage = (ev: MessageEvent) => {
@@ -245,6 +251,7 @@ export class IRCConnection {
 		};
 
 		ws.onclose = () => {
+			// Handshake phase: connection failed before onopen.
 			if (settled) return;
 			settled = true;
 			clearTimeout(timeout);

@@ -112,22 +112,16 @@
 
 	/**
 	 * Get voice participants for a channel as an array.
-	 * If we're in this room, use LiveKit data (has speaking/mute info).
-	 * Otherwise, fall back to IRC channel membership so users can see
-	 * who's in a voice channel without joining it.
+	 * Only returns LiveKit participants — users actively connected to the
+	 * voice room. IRC channel membership is not used as a fallback because
+	 * it would show every user who JOINed the IRC channel, not just those
+	 * actually in a voice call.
 	 */
 	function getVoiceParticipants(channel: string): VoiceParticipant[] {
 		if (voiceState.currentRoom === channel) {
 			return Array.from(voiceState.participants.values());
 		}
-		// Fall back to IRC membership for voice channels we haven't joined
-		const ch = channelState.channels.get(channel);
-		if (!ch) return [];
-		const members: VoiceParticipant[] = [];
-		for (const [nick] of ch.members) {
-			members.push({ nick, isSpeaking: false, isMuted: false, isDeafened: false, hasVideo: false, hasScreenShare: false });
-		}
-		return members;
+		return [];
 	}
 </script>
 

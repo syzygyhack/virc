@@ -180,12 +180,12 @@ describe('message state', () => {
 			expect(ids).toEqual(['old-1', 'old-2', 'new-1']);
 		});
 
-		it('evicts from the end when prepending exceeds capacity', () => {
+		it('evicts newest existing messages when prepend exceeds capacity', () => {
 			// Fill with 498 messages
 			for (let i = 0; i < 498; i++) {
 				addMessage('#test', makeMessage({ msgid: `existing-${i}` }));
 			}
-			// Prepend 5, total would be 503, so last 3 existing get cut
+			// Prepend 5, total would be 503, so newest 3 existing get trimmed
 			prependMessages('#test', [
 				makeMessage({ msgid: 'hist-0' }),
 				makeMessage({ msgid: 'hist-1' }),
@@ -195,9 +195,13 @@ describe('message state', () => {
 			]);
 			const msgs = getMessages('#test');
 			expect(msgs).toHaveLength(500);
+			// All prepended history preserved
 			expect(msgs[0].msgid).toBe('hist-0');
 			expect(msgs[4].msgid).toBe('hist-4');
+			// Existing messages start after history
 			expect(msgs[5].msgid).toBe('existing-0');
+			// Newest 3 existing messages trimmed (existing-495, -496, -497 gone)
+			expect(msgs[msgs.length - 1].msgid).toBe('existing-494');
 		});
 
 		it('creates the channel if it does not exist', () => {

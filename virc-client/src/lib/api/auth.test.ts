@@ -45,38 +45,43 @@ describe('credential helpers', () => {
 		expect(isAuthenticated()).toBe(false);
 	});
 
-	it('stores and retrieves credentials', () => {
-		storeCredentials({ account: 'alice', password: 'hunter2' });
+	it('stores and retrieves credentials (web fallback)', async () => {
+		await storeCredentials({ account: 'alice', password: 'hunter2' });
 		expect(isAuthenticated()).toBe(true);
 
-		const creds = getCredentials();
+		const creds = await getCredentials();
 		expect(creds).toEqual({ account: 'alice', password: 'hunter2' });
 	});
 
-	it('clears credentials on clearCredentials()', () => {
-		storeCredentials({ account: 'alice', password: 'hunter2' });
-		clearCredentials();
+	it('clears credentials on clearCredentials()', async () => {
+		await storeCredentials({ account: 'alice', password: 'hunter2' });
+		await clearCredentials();
 		expect(isAuthenticated()).toBe(false);
-		expect(getCredentials()).toBeNull();
+		expect(await getCredentials()).toBeNull();
 	});
 
-	it('returns null and clears storage for corrupted JSON', () => {
+	it('returns null and clears storage for corrupted JSON', async () => {
 		storage.setItem('virc:credentials', 'not valid json{{{');
-		expect(getCredentials()).toBeNull();
+		expect(await getCredentials()).toBeNull();
 		// Should have cleaned up the corrupted entry
 		expect(storage.getItem('virc:credentials')).toBeNull();
 	});
 
-	it('returns null and clears storage for invalid credential shape', () => {
+	it('returns null and clears storage for invalid credential shape', async () => {
 		storage.setItem('virc:credentials', JSON.stringify({ account: 123, password: null }));
-		expect(getCredentials()).toBeNull();
+		expect(await getCredentials()).toBeNull();
 		expect(storage.getItem('virc:credentials')).toBeNull();
 	});
 
-	it('returns null and clears storage for missing fields', () => {
+	it('returns null and clears storage for missing fields', async () => {
 		storage.setItem('virc:credentials', JSON.stringify({ foo: 'bar' }));
-		expect(getCredentials()).toBeNull();
+		expect(await getCredentials()).toBeNull();
 		expect(storage.getItem('virc:credentials')).toBeNull();
+	});
+
+	it('isAuthenticated() checks virc:account key', async () => {
+		storage.setItem('virc:account', 'alice');
+		expect(isAuthenticated()).toBe(true);
 	});
 });
 
@@ -146,7 +151,7 @@ describe('JWT management', () => {
 		const storage = createSessionStorageMock();
 		vi.stubGlobal('localStorage', storage);
 
-		storeCredentials({ account: 'alice', password: 'hunter2' });
+		await storeCredentials({ account: 'alice', password: 'hunter2' });
 
 		let callCount = 0;
 		const mockFetch = vi.fn().mockImplementation(() => {
@@ -178,7 +183,7 @@ describe('JWT management', () => {
 		const storage = createSessionStorageMock();
 		vi.stubGlobal('localStorage', storage);
 
-		storeCredentials({ account: 'alice', password: 'hunter2' });
+		await storeCredentials({ account: 'alice', password: 'hunter2' });
 
 		const mockFetch = vi.fn().mockResolvedValue({
 			ok: true,

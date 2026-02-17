@@ -171,6 +171,7 @@
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
+<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <nav class="server-list" aria-label="Servers" onclick={closeContextMenu}>
 	<div class="server-items">
 		{#each serverState.servers as server, index (server.id)}
@@ -245,6 +246,7 @@
 			onclick={(e) => e.stopPropagation()}
 			onkeydown={(e) => handleMenuKeydown(e, e.currentTarget as HTMLElement, closeContextMenu)}
 			role="menu"
+			tabindex="-1"
 			use:focusFirst
 		>
 			<button class="context-item" role="menuitem" onclick={handleServerSettings}>Server Settings</button>

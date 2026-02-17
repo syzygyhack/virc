@@ -305,6 +305,7 @@
 
 	.emoji-grid-placeholder {
 		/* Reserves approximate space for lazy-loaded emoji grids to prevent scroll jumps. */
+		min-height: 0;
 	}
 
 	.emoji-btn {

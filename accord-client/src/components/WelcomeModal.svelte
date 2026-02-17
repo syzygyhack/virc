@@ -35,6 +35,7 @@
 	role="dialog"
 	aria-modal="true"
 	aria-labelledby="welcome-title"
+	tabindex="-1"
 	onclick={handleOverlayClick}
 	onkeydown={handleKeydown}
 	use:useTrapFocus

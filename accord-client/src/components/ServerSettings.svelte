@@ -22,6 +22,7 @@
 
 	let { onclose, connection, initialTab = 'overview' }: Props = $props();
 
+	// svelte-ignore state_referenced_locally — initialTab is intentionally captured once at mount
 	let activeTab: TabId = $state(initialTab);
 
 	const TAB_TITLES: Record<TabId, string> = {
@@ -235,6 +236,7 @@
 <div class="settings-overlay" role="dialog" aria-modal="true" aria-label="Server Settings" tabindex="-1" onkeydown={handleKeydown} use:useTrapFocus>
 	<div class="settings-container">
 		<!-- Left: navigation -->
+		<!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
 		<nav class="settings-nav" role="tablist" aria-orientation="vertical" aria-label="Server settings tabs">
 			<div class="nav-section">
 				<span class="nav-section-title">{server?.name ?? 'Server'}</span>

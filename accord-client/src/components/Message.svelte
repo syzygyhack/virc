@@ -350,6 +350,7 @@
 					<div
 						class="more-menu"
 						role="menu"
+						tabindex="-1"
 						onkeydown={(e) => handleMenuKeydown(e, e.currentTarget as HTMLElement, closeMoreMenu)}
 						use:focusFirst
 					>
@@ -394,7 +395,7 @@
 							<img
 								class="media-thumbnail"
 								src={media.url}
-								alt="Image preview"
+								alt="Uploaded media"
 								loading="lazy"
 								onload={(e) => {
 									const img = e.currentTarget as HTMLImageElement;
@@ -657,6 +658,7 @@
 		class="lightbox-overlay"
 		role="dialog"
 		aria-label="Image preview"
+		tabindex="-1"
 		onclick={handleLightboxClick}
 		onkeydown={handleLightboxKeydown}
 	>
@@ -1092,7 +1094,7 @@
 		transition: filter 0.3s ease;
 	}
 
-	.media-thumbnail[data-loaded] {
+	.media-thumbnail:global([data-loaded]) {
 		filter: none;
 	}
 
@@ -1342,6 +1344,7 @@
 		color: var(--text-link);
 		display: -webkit-box;
 		-webkit-line-clamp: 2;
+		line-clamp: 2;
 		-webkit-box-orient: vertical;
 		overflow: hidden;
 	}
@@ -1351,6 +1354,7 @@
 		color: var(--text-secondary);
 		display: -webkit-box;
 		-webkit-line-clamp: 2;
+		line-clamp: 2;
 		-webkit-box-orient: vertical;
 		overflow: hidden;
 		line-height: 1.4;

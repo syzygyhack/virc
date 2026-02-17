@@ -410,6 +410,8 @@
 						{#each group.members.slice(slice.start, slice.end) as member (member.nick)}
 							{@const presence = presenceInfo(member)}
 							{@const color = getMemberColor(member)}
+							<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+							<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 							<div
 								class="member-row"
 								role="listitem"

@@ -239,6 +239,7 @@
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
+<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <aside class="channel-sidebar" aria-label="Channels" onclick={closeContextMenu}>
 	<div class="server-header">
 		<button class="server-header-btn" onclick={toggleServerDropdown} aria-expanded={serverDropdownOpen} aria-label="Server menu">
@@ -486,6 +487,7 @@
 			onclick={(e) => e.stopPropagation()}
 			onkeydown={(e) => handleMenuKeydown(e, e.currentTarget as HTMLElement, closeContextMenu)}
 			role="menu"
+			tabindex="-1"
 			use:focusFirst
 		>
 			<div class="context-menu-header" id="notif-menu-label">Notifications</div>
@@ -521,9 +523,10 @@
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<div class="create-channel-overlay" onclick={closeCreateChannel}>
 		<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-		<div class="create-channel-dialog" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Create or join channel">
+		<div class="create-channel-dialog" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Create or join channel" tabindex="-1">
 			<div class="create-channel-title">Join / Create Channel</div>
 			<form onsubmit={(e) => { e.preventDefault(); handleCreateChannelSubmit(); }}>
+				<!-- svelte-ignore a11y_autofocus -->
 				<input
 					class="create-channel-input"
 					type="text"
@@ -727,6 +730,7 @@
 
 	.channel-drag-wrapper {
 		/* Transparent wrapper for drag events; no visual impact by default */
+		position: relative;
 	}
 
 	.channel-drag-wrapper.drag-over {

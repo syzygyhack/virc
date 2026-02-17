@@ -528,6 +528,7 @@
 <div class="settings-overlay" role="dialog" aria-modal="true" aria-label="User Settings" tabindex="-1" onkeydown={handleKeydown} use:useTrapFocus>
 	<div class="settings-container">
 		<!-- Left: navigation -->
+		<!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
 		<nav class="settings-nav" role="tablist" aria-orientation="vertical" aria-label="Settings tabs">
 			<div class="nav-section">
 				<span class="nav-section-title">User Settings</span>
@@ -1824,19 +1825,6 @@
 	.reset-defaults-btn:disabled {
 		opacity: 0.5;
 		cursor: default;
-	}
-
-	/* ---- Disabled nav items (scaffolded) ---- */
-
-	.nav-item.disabled {
-		color: var(--text-muted);
-		cursor: default;
-		opacity: 0.5;
-	}
-
-	.nav-item.disabled:hover {
-		background: none;
-		color: var(--text-muted);
 	}
 
 	/* ---- Account Tab: Email & Password Forms ---- */

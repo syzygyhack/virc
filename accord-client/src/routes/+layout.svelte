@@ -1,7 +1,9 @@
 <script lang="ts">
   import '../app.css';
-  import { onMount } from 'svelte';
+  import { onMount, type Snippet } from 'svelte';
   import { appSettings } from '$lib/state/appSettings.svelte';
+
+  let { children }: { children: Snippet } = $props();
 
   // Apply zoom by scaling the CSS font-size tokens on :root.
   // This avoids CSS zoom which breaks viewport units and causes scrollbars.
@@ -51,4 +53,4 @@
   });
 </script>
 
-<slot />
+{@render children()}

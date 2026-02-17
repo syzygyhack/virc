@@ -462,6 +462,20 @@ No client forking required for customization.
 
 ---
 
+## Security Considerations
+
+**Rate limiting:** The rate limiter uses `TRUST_PROXY` to decide whether to read client IPs from `X-Forwarded-For`. When enabled without a trusted reverse proxy, attackers can spoof IPs to bypass rate limits. In production, always run behind Caddy (or another trusted proxy) and ensure no untrusted path can reach accord-files directly. When `TRUST_PROXY` is disabled (the default), the socket address is used.
+
+**Rate limit store:** The in-memory rate limit store caps at 50K entries with periodic cleanup. Under sustained attack from rotating IPs, the store can fill to the cap. For high-traffic deployments, consider an external rate limiter (e.g., Caddy's `rate_limit` directive or a WAF).
+
+**SSRF protection:** URL preview fetching validates hostnames against a private IP blocklist and pins DNS resolution to prevent rebinding. The blocklist covers IPv4 private ranges, IPv6 loopback/link-local/ULA/documentation, and `0.0.0.0`/`::`. Ensure accord-files cannot reach sensitive internal services even if a bypass is found.
+
+**Credentials in web builds:** In non-Tauri (browser) deployments, auth credentials are stored in `localStorage`. In Tauri desktop builds, the OS keyring is used instead. For web deployments, ensure the origin is protected against XSS.
+
+**SASL over plaintext:** SASL PLAIN authentication sends credentials base64-encoded (not encrypted). Always use `wss://` (TLS) for the WebSocket connection in production. The default Docker Compose setup routes through Caddy which terminates TLS.
+
+---
+
 ## Known Deferrals
 
 | Item | Current State | Notes |

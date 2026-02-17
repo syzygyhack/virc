@@ -13,20 +13,20 @@ Replace centralized platforms (Discord, Slack) with a self-hostable, federable s
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
+┌────────────────────────────────────────────────────────────────┐
 │                     accord Client (Svelte 5 / SvelteKit)       │
-│                                                                 │
+│                                                                │
 │  ┌───────────────────┐  ┌──────────────┐  ┌──────────────────┐ │
-│  │  IRC Protocol      │  │  LiveKit SDK  │  │  File Upload     │ │
-│  │  (WebSocket)       │  │  (WebRTC)     │  │  (HTTP)          │ │
-│  └────────┬──────────┘  └──────┬───────┘  └────────┬─────────┘ │
+│  │  IRC Protocol     │  │  LiveKit SDK │  │  File Upload     │ │
+│  │  (WebSocket)      │  │  (WebRTC)    │  │  (HTTP)          │ │
+│  └────────┬──────────┘  └───────┬──────┘  └────────┬─────────┘ │
 └───────────┼─────────────────────┼──────────────────┼───────────┘
             │                     │                  │
             │ WSS (IRC)           │ WSS+WebRTC       │ HTTPS
             │                     │                  │
-┌───────────▼──────────┐  ┌──────▼────────┐  ┌──────▼──────────┐
-│   Ergo IRC Server    │  │  LiveKit SFU   │  │  accord-files     │
-│                      │  │                │  │  (HTTP upload    │
+┌───────────▼──────────┐  ┌───────▼────────┐  ┌──────▼──────────┐
+│   Ergo IRC Server    │  │  LiveKit SFU   │  │  accord-files   │
+│                      │  │                │  │  (HTTP upload   │
 │  - Accounts (SASL)   │  │  - Voice rooms │  │   + storage)    │
 │  - Channels          │  │  - Video       │  │                 │
 │  - History (MySQL)   │  │  - Screen share│  │  MinIO / R2 /   │
@@ -36,7 +36,7 @@ Replace centralized platforms (Discord, Slack) with a self-hostable, federable s
 │  - Message redaction │  │                │  │                 │
 │  - WebSocket native  │  │                │  │                 │
 │  - HTTP API          │  │                │  │                 │
-└──────────────────────┘  └───────────────┘  └─────────────────┘
+└──────────────────────┘  └────────────────┘  └─────────────────┘
 ```
 
 ### Services

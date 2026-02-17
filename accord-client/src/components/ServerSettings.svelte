@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { getActiveServer } from '$lib/state/servers.svelte';
-	import { useTrapFocus } from '$lib/utils/a11y';
+	import { useTrapFocus, handleTablistKeydown } from '$lib/utils/a11y';
 	import { serverConfig } from '$lib/state/serverConfig.svelte';
 	import { channelUIState } from '$lib/state/channels.svelte';
 	import { getMembers } from '$lib/state/members.svelte';
@@ -237,7 +237,7 @@
 	<div class="settings-container">
 		<!-- Left: navigation -->
 		<!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
-		<nav class="settings-nav" role="tablist" aria-orientation="vertical" aria-label="Server settings tabs">
+		<nav class="settings-nav" role="tablist" aria-orientation="vertical" aria-label="Server settings tabs" onkeydown={(e) => handleTablistKeydown(e, e.currentTarget)}>
 			<div class="nav-section">
 				<span class="nav-section-title">{server?.name ?? 'Server'}</span>
 				<button class="nav-item" class:active={activeTab === 'overview'} role="tab" aria-selected={activeTab === 'overview'} aria-controls="ss-tabpanel-overview" onclick={() => activeTab = 'overview'}>

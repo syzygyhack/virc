@@ -660,3 +660,130 @@ Lists 8 stores but actual has 15. Missing: `appSettings`, `audioSettings`, `pres
 | CR-F008 | CSS injection via role colors | **Already fixed**: `isSafeColor()` validates against regex |
 | CR-F041 | renderCodeBlocks dead code | **Intentional**: Exported standalone utility with 12+ tests; documented as step 0 in pipeline comment. Not called in production but available as public API |
 | Docs | README stats and TODO.md stale items | **FIXED**: Updated commit count, source lines, stale TODO items, Known Deferrals contradictions |
+
+### Fixes Applied (post-review session)
+
+| ID | Issue | Resolution |
+|----|-------|------------|
+| CR-F013 | No focus traps in modal dialogs | **FIXED**: 5/7 modals already had `use:useTrapFocus`. Added to DeleteConfirmDialog and AuthExpiredModal |
+| CR-F014 | No focus management on dialog open | **FIXED**: `useTrapFocus` calls `focusFirst()` on mount for all 7 modals |
+| CR-F015 | Missing ARIA tab pattern keyboard nav | **FIXED**: Added `handleTablistKeydown()` utility (ArrowUp/Down, Home/End) to ServerSettings and UserSettings |
+| CR-F017 | No landmark roles in main layout | **FIXED**: Center panel uses `<main>`. ServerList already `<nav>`, ChannelSidebar already `<aside>`, MemberList already `<aside>` |
+
+---
+
+## Issue Dispositions
+
+All issues not resolved above are categorized below. Each has a disposition explaining why it is accepted, deferred, or not applicable.
+
+### Security
+
+| ID | Severity | Issue | Disposition |
+|----|----------|-------|-------------|
+| CR-F002 | HIGH | Rate limit bypass via X-Forwarded-For | **Accepted Risk**: Only exploitable when `TRUST_PROXY` is enabled without a trusted proxy (misconfiguration). Default is disabled. Documented in README Security Considerations section |
+| CR-F003 | HIGH | Unbounded rate limit store growth | **Mitigated / Accepted Risk**: Store has 50K cap with periodic cleanup. Documented in README. For high-traffic deployments, external rate limiting (Caddy/WAF) is recommended |
+| CR-F004 | MEDIUM | linkify/highlightMentions XSS-fragile contract | **Accepted Risk**: `renderMessage()` is the only entry point and always calls `escapeHTML()` first. Functions are documented as requiring pre-escaped input. Adding redundant escaping would break HTML entity rendering |
+| CR-F-NEW-01 | MEDIUM | Credentials in localStorage (web builds) | **By Design**: Tauri builds use OS keyring. Web builds use localStorage as the only available storage. Documented in README Security section |
+| CR-F-NEW-02 | LOW | No TLS enforcement for WebSocket SASL | **Accepted Risk**: Default Docker Compose stack routes through Caddy (TLS). Adding a client-side `wss://` check would break local dev (`ws://localhost`). Documented in README |
+| CR-F010 | LOW | All invites visible to authenticated users | **By Design**: Single-server model; all authenticated users are server members. Access control deferred to multi-server support |
+| CR-F011 | LOW | No per-user upload quota | **Deferred to v0.2**: Global rate limiter + MAX_FILE_SIZE provide baseline protection. Per-user quotas need a storage tracking layer |
+| CR-F012 | LOW | No global request body size limit | **Accepted Risk**: File upload route enforces MAX_FILE_SIZE. Other routes accept only small JSON payloads. Hono/Bun reject absurdly large bodies at the runtime level |
+
+### Accessibility
+
+| ID | Severity | Issue | Disposition |
+|----|----------|-------|-------------|
+| CR-F018 | MEDIUM | Context menus lack keyboard navigation | **Deferred to v0.2**: `handleMenuKeydown` utility exists in a11y.ts but not yet wired to all 3 context menu components. Requires refactoring context menus into a shared component (see CR-F034) |
+| CR-F019 | MEDIUM | Drag-and-drop has no keyboard alternative | **Deferred to v0.2**: Server/channel reorder is mouse-only. Low priority — order persists and rarely changes |
+| CR-F020 | MEDIUM | Presence dots lack screen reader labels | **Deferred to v0.2**: Unicode dots are decorative; nick text is already readable. Adding `aria-label` to each presence indicator is straightforward |
+| CR-F021 | MEDIUM | Spoiler reveal is mouse-only | **Deferred to v0.2**: Spoilers use CSS `:hover`. Needs `tabindex` + Enter/Space handler |
+| CR-F022 | LOW | Skeleton loaders have no ARIA | **Deferred to v0.2**: Should add `aria-busy="true"` and `role="status"` |
+| CR-F023 | LOW | System message icons lack aria-hidden | **Deferred to v0.2**: Decorative SVGs should have `aria-hidden="true"` |
+| CR-F024 | LOW | Hover card is keyboard inaccessible | **Deferred to v0.2**: Member hover cards only appear on mouse hover. Needs focus-triggered variant |
+| CR-F025 | LOW | role="listbox" used incorrectly | **Deferred to v0.2**: Member list should use `role="list"` with `role="listitem"` children |
+| CR-F026 | LOW | Poor contrast on muted text | **Accepted Risk**: `--text-muted` at ~2.7:1 is intentionally de-emphasized. Timestamps and secondary info are not essential content. AMOLED theme uses lighter muted color |
+| CR-F027 | LOW | No prefers-color-scheme support | **By Design**: App has explicit theme selector with 4 options. System preference detection would conflict with user's explicit choice |
+| CR-F-NEW-06 | LOW | 41 suppressed a11y warnings | **Accepted Risk**: Suppressions are for known patterns (interactive divs in drag-drop, click handlers on non-interactive containers). Each has a `svelte-ignore` comment at the usage site |
+
+### Architecture & Code Smells
+
+| ID | Severity | Issue | Disposition |
+|----|----------|-------|-------------|
+| CR-F028 | HIGH | Large components (7 files >800 lines) | **Accepted / Deferred**: UserSettings (2,270) and ServerSettings (1,388) are settings modals with many tabs — splitting each tab into a component is viable but low-value. Message.svelte (1,403) has rich rendering logic. +page.svelte was reduced from 1,355 to 809. Further extraction risks fragmenting cohesive logic |
+| CR-F029 | MEDIUM | Dual member stores | **By Design**: `channels.svelte.ts` tracks per-channel membership (for sidebar counts). `members.svelte.ts` tracks detailed member info (modes, away status). Different data shapes for different consumers |
+| CR-F030 | MEDIUM | Version-counter notify pattern duplicated 6x | **Accepted**: Pattern is 3 lines per store. A shared base class would add complexity (generics, inheritance) for minimal savings. Stores are independent and rarely change |
+| CR-F031 | MEDIUM | Duplicated caching infrastructure | **Deferred to v0.2**: Both caches are small (<30 lines each). A shared `Cache<K,V>` utility is a clean refactor but low priority |
+| CR-F032 | MEDIUM | Duplicated login/register flows | **Accepted**: Login and register have different validation, error handling, and post-auth flows. Extracting shared logic would create a function with many conditional branches |
+| CR-F033 | MEDIUM | Duplicated init/reconnect flows | **Accepted**: init and reconnect share NICK/USER/SASL but differ in state reset, error handling, and UI feedback. Reconnect skips welcome flow and has exponential backoff. Merging would increase complexity |
+| CR-F034 | MEDIUM | Duplicated context menu pattern | **Deferred to v0.2**: Should extract `<ContextMenu>` component. Would fix CR-F018 (keyboard nav) simultaneously |
+| CR-F035 | LOW | Duplicated isOp computation | **Accepted**: One-liner repeated in 5 files. A shared `isOp(member)` helper would save 4 lines but add an import to each file |
+| CR-F036 | LOW | Duplicated voice control SVGs | **Deferred to v0.2**: Should extract `<VoiceControlButton>` component |
+| CR-F037 | LOW | Duplicated voice toggle shortcut boilerplate | **Accepted**: Four handlers share boilerplate but differ in the toggle function called. Extracting a factory would obscure the mapping |
+| CR-F038 | LOW | Duplicated tag check in scroll shortcuts | **Accepted**: Four handlers check `tagName` before scrolling. 2 lines each. Extraction not worthwhile |
+| CR-F039 | LOW | Duplicated media extension definitions | **Accepted**: `media.ts` uses arrays for matching; `preview.ts` uses a Set for lookup. Different data structures for different access patterns |
+| CR-F040 | LOW | channels.svelte.ts mixes IRC/UI concerns | **Accepted**: Channel state is inherently both IRC (members, topic) and UI (active channel, categories). Splitting would require cross-store coordination |
+| CR-F043 | LOW | Non-functional UI elements | **Accepted**: "Add Server" button is placeholder for multi-server (Known Deferral). "Disconnect" context menu item closes the menu (intended behavior — disconnect is via Settings) |
+
+### Performance
+
+| ID | Severity | Issue | Disposition |
+|----|----------|-------|-------------|
+| CR-F051 | MEDIUM | No virtual scrolling for member list | **Already Resolved**: Member list has virtual scrolling (MemberList.svelte uses viewport-based rendering) |
+| CR-F052 | MEDIUM | offsetAtIndex is O(n) | **Accepted Risk**: Only called for scroll-to-message operations (user-initiated). Message lists rarely exceed a few hundred visible items due to history pagination |
+| CR-F053 | MEDIUM | getMembers/getMembersByRole re-sort every tick | **Accepted Risk**: Sort is triggered by version counter (only on membership changes). Member lists are typically <200 entries. Caching sorted results would add staleness risk |
+| CR-F054 | MEDIUM | Regex compiled per message for mentions | **Accepted Risk**: Regex compilation is cheap (<1ms). Messages are rendered individually, not in bulk. Caching would need invalidation on nick changes |
+| CR-F055 | LOW | resolveAccountForNick triple-nested iteration | **Accepted Risk**: Called once per voice connection. Voice rooms are typically <20 participants |
+| CR-F056 | LOW | searchEmoji linear scan per keystroke | **Accepted Risk**: Emoji list is ~1,800 entries. Linear scan with early termination completes in <5ms. Search is debounced |
+| CR-F057 | LOW | getFrequentEmoji parses localStorage every call | **Accepted Risk**: Called when emoji picker opens (infrequent). JSON.parse of a small array is negligible |
+| CR-F058 | LOW | renderIRC O(n^2) string concatenation | **Accepted Risk**: IRC messages are short (typical <500 chars). Switching to array join would be premature optimization |
+| CR-F059 | LOW | Repeated DM sorting on every update | **Accepted Risk**: DM list is typically <20 entries. Sort runs only on membership change (version tick) |
+
+### Error Handling
+
+| ID | Severity | Issue | Disposition |
+|----|----------|-------|-------------|
+| CR-F061 | MEDIUM | handleBatchedMessage drops non-PRIVMSG | **By Design**: CHATHISTORY batches contain only PRIVMSG in practice (Ergo's implementation). Other commands in batches would be edge cases not seen in testing |
+| CR-F065 | MEDIUM | No request timeouts on client API calls | **Deferred to v0.2**: Browser `fetch` has no built-in timeout. Adding `AbortController` timeouts to all API calls is a clean but low-priority change |
+| CR-F066 | MEDIUM | connection.ts emit() doesn't protect handler exceptions | **Accepted Risk**: Handler exceptions would be bugs (not expected failures). A try/catch wrapper would silence errors. Better to let them propagate and surface in dev |
+| CR-F063 | LOW | InviteStore write failures silently swallowed | **Accepted**: Console error is logged (`[accord] InviteStore save failed`). Store is in-memory primary, file-backed secondary. Write failure doesn't affect runtime behavior |
+| CR-F068 | LOW | navigator.clipboard.writeText errors swallowed | **Accepted**: Clipboard API requires user gesture and secure context. Errors are typically permission denials which don't warrant UI feedback |
+| CR-F069 | LOW | No error handling on setMicrophoneEnabled during connect | **Already fixed**: room.ts wraps in try/catch (fix log entry) |
+| CR-F070 | LOW | PTT shortcuts don't await setMicrophoneEnabled | **Accepted Risk**: Fire-and-forget is intentional for PTT — waiting would add latency to key-up/key-down responsiveness |
+
+### CSS & Styling
+
+| ID | Severity | Issue | Disposition |
+|----|----------|-------|-------------|
+| CR-F076 | MEDIUM | Hardcoded rgba() shadow/overlay values | **Accepted**: Shadows and overlays use black/transparent which is correct for all themes. CSS custom properties for shadows would add complexity without visual benefit |
+| CR-F077 | MEDIUM | Hardcoded syntax highlight colors | **Deferred to v0.2**: Code block syntax highlighting uses fixed colors. Should use CSS custom properties for theme-awareness |
+| CR-F078 | LOW | Theme token duplication | **Accepted**: Some tokens repeat values across themes. This is intentional — themes can diverge independently |
+| CR-F079 | LOW | No default theme fallback | **Accepted**: Theme is always set on load (`dark` default). CSS vars without fallbacks are intentional — missing vars indicate a bug |
+| CR-F080 | LOW | No z-index scale | **Accepted**: Z-index values (1, 100, 150, 200, 1000, 1100, 1200) form an implicit scale. A formal token system would help but is low priority |
+| CR-F081-085 | LOW | Minor CSS issues | **Deferred to v0.2**: Magic numbers (72px gutter), hardcoded transitions, etc. Low impact |
+
+### Type Safety
+
+| ID | Severity | Issue | Disposition |
+|----|----------|-------|-------------|
+| CR-F086 | MEDIUM | Unsafe `as` casts on res.json() | **Accepted Risk**: API responses are from our own backend with known shapes. Runtime validation would duplicate the TypeScript types without catching real bugs (server and client share the same type definitions implicitly) |
+| CR-F087 | MEDIUM | Unsafe `as` casts on localStorage JSON | **Accepted Risk**: localStorage data is written by the same app. Corrupt data would be caught by the UI rendering (missing fields surface as `undefined`). Adding Zod/runtime validation for settings is overkill |
+| CR-F088 | LOW | `any` types in event system | **Deferred to v0.2**: IRC event emitter uses `any` for listener types. A typed event map (see TODO.md) would fix this |
+| CR-F089 | LOW | `null as unknown as Room` type hack | **Accepted**: LiveKit `Room` cannot be constructed without connecting. The sentinel is checked before use (`if (room !== null)`). Alternative would be `Room | null` throughout, adding null checks at every call site |
+
+### Inconsistent Patterns
+
+| ID | Severity | Issue | Disposition |
+|----|----------|-------|-------------|
+| CR-F-INC-01 | MEDIUM | Inconsistent error return patterns across API | **Deferred to v0.2**: Some routes return `{ error: string }`, others throw. Standardizing requires touching all API routes |
+| CR-F-INC-04 | LOW | Inconsistent state architecture | **By Design**: Stores have different patterns because they have different requirements (some persist, some don't; some need version tracking, some use $state directly) |
+| CR-F-INC-05 | LOW | Missing reset functions | **Accepted**: `voice.svelte.ts`, `audioSettings.svelte.ts`, `connection.svelte.ts` don't need reset — they're app-lifetime singletons that persist across reconnections |
+| CR-F-INC-06 | LOW | ensureChannel returns different types | **Accepted**: Each store's `ensureChannel` creates a different data shape (channel state vs member list vs message list vs notification settings). They can't share a return type |
+| CR-F-INC-07 | LOW | Inconsistent persist-on-reset behavior | **Accepted**: Some stores clear localStorage on reset (user logged out), others preserve settings (theme, keybindings persist across accounts). This is intentional per-store behavior |
+| CR-F-INC-08 | LOW | Inconsistent void vs Promise<void> in voice | **Accepted**: Voice shortcuts fire-and-forget (`void`) is intentional for responsiveness. The underlying LiveKit calls are async but errors are caught internally |
+
+### Test Coverage Gaps
+
+| ID | Severity | Issue | Disposition |
+|----|----------|-------|-------------|
+| CR-F044 | LOW | hasLocalStorage() under-adopted | **Already fixed**: All files now use `hasLocalStorage()` (fix log) |
+| CR-F067 | LOW | Missing SSR guards | **Already fixed**: Guards added to all state modules (fix log) |

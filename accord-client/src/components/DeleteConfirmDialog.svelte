@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { useTrapFocus } from '$lib/utils/a11y';
+
 	interface Props {
 		onconfirm: () => void;
 		oncancel: () => void;
@@ -7,7 +9,8 @@
 	let { onconfirm, oncancel }: Props = $props();
 </script>
 
-<div class="delete-overlay" role="dialog" aria-modal="true" aria-labelledby="delete-dialog-title" tabindex="-1" onclick={oncancel} onkeydown={(e) => { if (e.key === 'Escape') oncancel(); }}>
+<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+<div class="delete-overlay" role="dialog" aria-modal="true" aria-labelledby="delete-dialog-title" tabindex="-1" onclick={oncancel} onkeydown={(e) => { if (e.key === 'Escape') oncancel(); }} use:useTrapFocus>
 	<div class="delete-dialog" role="presentation" onclick={(e) => e.stopPropagation()}>
 		<h3 id="delete-dialog-title" class="delete-title">Delete Message</h3>
 		<p class="delete-text">Are you sure you want to delete this message? This cannot be undone.</p>

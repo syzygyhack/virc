@@ -99,6 +99,54 @@ export function useTrapFocusOnly(container: HTMLElement): { destroy: () => void 
 }
 
 /**
+ * Keyboard handler for vertical tab navigation (settings panels).
+ * Handles ArrowUp/ArrowDown to move between tabs, Home/End to jump to
+ * first/last tab. Activates the focused tab via its onclick.
+ *
+ * Attach to the tablist container's `onkeydown`.
+ */
+export function handleTablistKeydown(
+	e: KeyboardEvent,
+	container: HTMLElement,
+): void {
+	const tabs = Array.from(
+		container.querySelectorAll<HTMLElement>('[role="tab"]:not([disabled])'),
+	);
+	if (tabs.length === 0) return;
+
+	const current = document.activeElement as HTMLElement;
+	const currentIndex = tabs.indexOf(current);
+	if (currentIndex === -1) return;
+
+	let targetIndex: number | null = null;
+
+	switch (e.key) {
+		case 'ArrowDown': {
+			targetIndex = currentIndex < tabs.length - 1 ? currentIndex + 1 : 0;
+			break;
+		}
+		case 'ArrowUp': {
+			targetIndex = currentIndex > 0 ? currentIndex - 1 : tabs.length - 1;
+			break;
+		}
+		case 'Home': {
+			targetIndex = 0;
+			break;
+		}
+		case 'End': {
+			targetIndex = tabs.length - 1;
+			break;
+		}
+	}
+
+	if (targetIndex !== null) {
+		e.preventDefault();
+		tabs[targetIndex].focus();
+		tabs[targetIndex].click();
+	}
+}
+
+/**
  * Keyboard handler for menu navigation (context menus, dropdown menus).
  * Handles ArrowUp/ArrowDown to move between menuitem elements,
  * Home/End to jump to first/last item, and Escape to close.

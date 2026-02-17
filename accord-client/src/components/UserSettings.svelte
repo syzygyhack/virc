@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
-	import { useTrapFocus } from '$lib/utils/a11y';
+	import { useTrapFocus, handleTablistKeydown } from '$lib/utils/a11y';
 	import { userState } from '$lib/state/user.svelte';
 	import { clearToken, clearCredentials } from '$lib/api/auth';
 	import { formatMessage } from '$lib/irc/parser';
@@ -529,7 +529,7 @@
 	<div class="settings-container">
 		<!-- Left: navigation -->
 		<!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
-		<nav class="settings-nav" role="tablist" aria-orientation="vertical" aria-label="Settings tabs">
+		<nav class="settings-nav" role="tablist" aria-orientation="vertical" aria-label="Settings tabs" onkeydown={(e) => handleTablistKeydown(e, e.currentTarget)}>
 			<div class="nav-section">
 				<span class="nav-section-title">User Settings</span>
 				<button class="nav-item" class:active={activeTab === 'account'} role="tab" aria-selected={activeTab === 'account'} aria-controls="tabpanel-account" onclick={() => activeTab = 'account'}>

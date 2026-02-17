@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { clearCredentials, clearToken } from '$lib/api/auth';
+	import { useTrapFocus } from '$lib/utils/a11y';
 
 	interface Props {
 		visible: boolean;
@@ -18,7 +19,8 @@
 </script>
 
 {#if visible}
-	<div class="auth-overlay" role="dialog" aria-modal="true" aria-labelledby="auth-expired-title">
+	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+	<div class="auth-overlay" role="dialog" aria-modal="true" aria-labelledby="auth-expired-title" tabindex="-1" onkeydown={(e) => { if (e.key === 'Escape') e.stopPropagation(); }} use:useTrapFocus>
 		<div class="auth-dialog">
 			<div class="auth-icon">
 				<svg width="40" height="40" viewBox="0 0 40 40" fill="currentColor">

@@ -491,10 +491,10 @@
 <svelte:window bind:innerWidth={innerWidth} />
 
 <div class="chat-layout">
-	<!-- Far left: Server list strip -->
+	<!-- Far left: Server list strip (ServerList is already a <nav> landmark) -->
 	<ServerList onserversettings={() => { serverSettingsInitialTab = 'overview'; showServerSettings = true; }} />
 
-	<!-- Left column: Channel sidebar -->
+	<!-- Left column: Channel sidebar (ChannelSidebar is already an <aside> landmark) -->
 	<div class="left-panel" class:overlay={sidebarIsOverlay} class:visible={sidebarIsOverlay && showSidebar} style="width: {appSettings.sidebarWidth}px;">
 		<ChannelSidebar onvoicechannelclick={handleVoiceChannelClick} {voiceRoom} onsettingsclick={() => (showSettings = true)} onserversettingsclick={() => { serverSettingsInitialTab = 'overview'; showServerSettings = true; }} oncreatechannel={(ch) => { if (conn) { join(conn, [ch]); setActiveChannel(ch); chathistory(conn, 'LATEST', ch, '*', '50'); } }} onvoiceexpand={() => (showVoiceOverlay = true)} />
 		{#if !sidebarIsOverlay}
@@ -508,7 +508,7 @@
 	{/if}
 
 	<!-- Center column: Header + Messages + Input -->
-	<div class="center-panel">
+	<main class="center-panel">
 		<HeaderBar
 			ontogglemembers={toggleMembers}
 			membersVisible={showMembers}
@@ -594,9 +594,9 @@
 				</div>
 			</div>
 		{/if}
-	</div>
+	</main>
 
-	<!-- Right column: Member list (overlay below 1200px, hidden for DMs) -->
+	<!-- Right column: Member list (MemberList is already an <aside> landmark) -->
 	{#if !isActiveDM && (isDesktop || showMembers)}
 		<div class="right-panel" class:overlay={!isDesktop} class:visible={!isDesktop && showMembers} style="width: {appSettings.memberListWidth}px;">
 			{#if isDesktop}

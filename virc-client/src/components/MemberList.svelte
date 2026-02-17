@@ -317,6 +317,11 @@
 	</div>
 
 	<div class="member-scroll">
+		{#if roleGroups.length === 0}
+			<div class="empty-state">
+				<span class="empty-state-text">It's quiet... nobody else is online</span>
+			</div>
+		{/if}
 		{#each roleGroups as group (group.key)}
 			<div class="role-group">
 				<button
@@ -452,6 +457,21 @@
 		flex: 1;
 		overflow-y: auto;
 		padding: 0 8px 8px;
+	}
+
+	/* Empty state */
+	.empty-state {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 24px 16px;
+	}
+
+	.empty-state-text {
+		font-size: var(--font-sm);
+		color: var(--text-muted);
+		font-style: italic;
+		text-align: center;
 	}
 
 	/* Role group */

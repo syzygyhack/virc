@@ -1,5 +1,5 @@
 /**
- * Shared constants used across the virc-client application.
+ * Shared constants used across the accord-client application.
  *
  * Centralizes role definitions, mode ordering, and common patterns
  * to avoid duplication across components.

@@ -5,7 +5,7 @@
  * (Caddy proxies both), so we derive from the WebSocket URL.
  * In dev mode, WebSocket goes direct to Ergo (port 8097) but HTTP
  * API requests need to go through the Vite dev server (same origin)
- * which proxies /api and /.well-known to virc-files.
+ * which proxies /api and /.well-known to accord-files.
  *
  *   ws://localhost:8097       → http://localhost:5173 (dev, uses page origin)
  *   ws://localhost/ws         → http://localhost

@@ -1,5 +1,5 @@
 /**
- * Client-side API for managing server invites via virc-files.
+ * Client-side API for managing server invites via accord-files.
  *
  * Endpoints:
  *   GET    /api/invite         — list all invites
@@ -28,7 +28,7 @@ export interface CreateInviteResult {
 	maxUses: number;
 }
 
-/** Fetch all invites from virc-files. Returns empty array on failure. */
+/** Fetch all invites from accord-files. Returns empty array on failure. */
 export async function listInvites(filesUrl: string, authToken: string): Promise<InviteSummary[]> {
 	const baseUrl = normalizeBaseUrl(filesUrl);
 	try {

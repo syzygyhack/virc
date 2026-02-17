@@ -1,7 +1,7 @@
 /**
  * Link preview fetching for URL metadata (Open Graph cards).
  *
- * Fetches OG metadata from the virc-files /api/preview endpoint
+ * Fetches OG metadata from the accord-files /api/preview endpoint
  * and caches results client-side to avoid duplicate requests.
  */
 
@@ -51,7 +51,7 @@ function evictCache(): void {
 }
 
 /**
- * Fetch link preview metadata for a URL via the virc-files server.
+ * Fetch link preview metadata for a URL via the accord-files server.
  *
  * Returns cached result if available (with TTL check). Deduplicates
  * concurrent requests for the same URL. Returns null on error or if

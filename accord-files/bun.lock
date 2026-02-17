@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "virc-files",
+      "name": "accord-files",
       "dependencies": {
         "hono": "^4.7.0",
         "jose": "^6.0.0",

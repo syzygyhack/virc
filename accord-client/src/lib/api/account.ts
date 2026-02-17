@@ -1,7 +1,7 @@
 /**
  * Client-side API for account management (password, email).
  *
- * Calls virc-files endpoints which proxy to Ergo's NickServ HTTP API.
+ * Calls accord-files endpoints which proxy to Ergo's NickServ HTTP API.
  */
 
 import { normalizeBaseUrl } from '$lib/utils/url';
@@ -21,7 +21,7 @@ export interface AccountApiResult {
 }
 
 /**
- * Change the user's password via virc-files.
+ * Change the user's password via accord-files.
  *
  * Requires a valid JWT token and the current password for verification.
  */
@@ -54,7 +54,7 @@ export async function changePassword(
 }
 
 /**
- * Set or change the user's email via virc-files.
+ * Set or change the user's email via accord-files.
  *
  * Requires a valid JWT token.
  */

@@ -1,5 +1,5 @@
 /**
- * Auth helpers for virc-client.
+ * Auth helpers for accord-client.
  *
  * Credential storage strategy:
  *   - In Tauri builds: account name in localStorage (fast, non-sensitive),
@@ -11,7 +11,7 @@
  * Auth flow:
  *   1. User logs in with account + password
  *   2. Credentials stored for SASL reconnect / JWT refresh
- *   3. POST /api/auth sends credentials to virc-files, receives JWT
+ *   3. POST /api/auth sends credentials to accord-files, receives JWT
  *   4. JWT auto-refreshes based on token expiry (default fallback: 50 minutes)
  */
 
@@ -246,7 +246,7 @@ function computeRefreshDelay(): number {
 }
 
 /**
- * Fetch a JWT from virc-files by posting credentials.
+ * Fetch a JWT from accord-files by posting credentials.
  * Stores the token in memory and returns it.
  *
  * @throws {Error} if the server returns a non-OK response.

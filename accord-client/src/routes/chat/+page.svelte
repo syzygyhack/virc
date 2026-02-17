@@ -744,7 +744,7 @@
 			// 3. SASL re-authentication
 			await authenticateSASL(conn, creds.account, creds.password);
 
-			// 4. Refresh virc-files JWT
+			// 4. Refresh accord-files JWT
 			if (filesUrl) {
 				try {
 					await fetchToken(filesUrl, creds.account, creds.password);

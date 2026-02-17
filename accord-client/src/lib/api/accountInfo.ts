@@ -1,5 +1,5 @@
 /**
- * Account info fetching from virc-files /api/account-info endpoint.
+ * Account info fetching from accord-files /api/account-info endpoint.
  *
  * Proxies to Ergo's /v1/ns/info to retrieve account registration date.
  * Results are cached client-side to avoid duplicate requests.
@@ -42,7 +42,7 @@ function evictCache(): void {
 }
 
 /**
- * Fetch account info from virc-files.
+ * Fetch account info from accord-files.
  *
  * Returns cached result if available. Deduplicates concurrent requests.
  * Returns null on error or if the account is not found.

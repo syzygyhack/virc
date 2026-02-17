@@ -1,7 +1,7 @@
 /**
- * File upload utility for virc-client.
+ * File upload utility for accord-client.
  *
- * Sends files to the virc-files server via POST /api/upload
+ * Sends files to the accord-files server via POST /api/upload
  * with multipart/form-data encoding.
  */
 
@@ -15,11 +15,11 @@ export interface UploadResult {
 }
 
 /**
- * Upload a file to the virc-files server.
+ * Upload a file to the accord-files server.
  *
  * @param file     - The File object to upload
  * @param token    - JWT auth token
- * @param filesUrl - Base URL of the virc-files server (e.g. "https://files.example.com")
+ * @param filesUrl - Base URL of the accord-files server (e.g. "https://files.example.com")
  * @returns The upload result with URL, filename, size, and mimetype
  * @throws {Error} on network failure or non-OK server response
  */

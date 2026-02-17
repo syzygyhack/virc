@@ -168,7 +168,7 @@
 		const filesUrl = server?.filesUrl;
 		const token = getToken();
 		if (!filesUrl || !token) {
-			invitesError = 'Not connected to virc-files.';
+			invitesError = 'Not connected to accord-files.';
 			return;
 		}
 		invitesLoading = true;
@@ -441,7 +441,7 @@
 				{:else if activeTab === 'invites'}
 					<div class="invites-section">
 						{#if !server?.filesUrl}
-							<p class="hint-text">Invite management requires virc-files. This server does not have a filesUrl configured.</p>
+							<p class="hint-text">Invite management requires accord-files. This server does not have a filesUrl configured.</p>
 						{:else}
 							<div class="invite-create-form">
 								<label class="invite-label" for="invite-channel">Channel</label>
@@ -539,7 +539,7 @@
 						{/if}
 
 						<p class="hint-text">
-							Editing theme overrides requires access to the virc-files API and will be available in a future update.
+							Editing theme overrides requires access to the accord-files API and will be available in a future update.
 						</p>
 					</div>
 

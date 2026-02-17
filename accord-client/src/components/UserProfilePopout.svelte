@@ -128,7 +128,7 @@
 		};
 	});
 
-	/** Fetch registered date from Ergo via virc-files on mount. */
+	/** Fetch registered date from Ergo via accord-files on mount. */
 	$effect(() => {
 		if (!account) return;
 		const server = getActiveServer();

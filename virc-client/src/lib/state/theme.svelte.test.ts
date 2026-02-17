@@ -6,6 +6,14 @@ import {
 	clearServerTheme,
 	parseServerTheme,
 	resetTheme,
+	setServerThemesDisabled,
+	setServerThemeDisabled,
+	isServerThemeDisabled,
+	dismissContrastWarning,
+	parseColor,
+	relativeLuminance,
+	contrastRatio,
+	checkThemeContrast,
 } from './theme.svelte';
 
 /**
@@ -218,6 +226,236 @@ describe('theme state', () => {
 			expect(themeState.current).toBe('dark');
 			expect(themeState.serverOverrides).toEqual({});
 			expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+		});
+
+		it('resets server theme prefs and contrast warning', () => {
+			setServerThemesDisabled(true);
+			resetTheme();
+			expect(themeState.serverThemesDisabled).toBe(false);
+			expect(themeState.disabledServerIds).toEqual([]);
+			expect(themeState.contrastWarning).toBeNull();
+		});
+	});
+
+	describe('global server theme toggle', () => {
+		it('disables all server themes', () => {
+			setServerThemesDisabled(true);
+			expect(themeState.serverThemesDisabled).toBe(true);
+		});
+
+		it('persists to localStorage', () => {
+			setServerThemesDisabled(true);
+			const stored = localStorage.getItem('virc:serverThemePrefs');
+			expect(stored).toBeTruthy();
+			const parsed = JSON.parse(stored!);
+			expect(parsed.disableAll).toBe(true);
+		});
+
+		it('prevents server themes from being applied', () => {
+			setServerThemesDisabled(true);
+			const result = applyServerTheme({ '--accent-primary': '#ff0000' });
+			expect(result.applied).toBe(false);
+			expect(themeState.serverOverrides).toEqual({});
+			expect(document.documentElement.style.getPropertyValue('--accent-primary')).toBe('');
+		});
+
+		it('clears existing overrides when disabled', () => {
+			applyServerTheme({ '--accent-primary': '#ff0000' });
+			expect(themeState.serverOverrides).toHaveProperty('--accent-primary');
+			setServerThemesDisabled(true);
+			expect(themeState.serverOverrides).toEqual({});
+		});
+
+		it('re-enables server themes', () => {
+			setServerThemesDisabled(true);
+			setServerThemesDisabled(false);
+			expect(themeState.serverThemesDisabled).toBe(false);
+			const result = applyServerTheme({ '--accent-primary': '#ff0000' });
+			expect(result.applied).toBe(true);
+		});
+	});
+
+	describe('per-server theme toggle', () => {
+		it('disables a specific server theme', () => {
+			setServerThemeDisabled('server1', true);
+			expect(isServerThemeDisabled('server1')).toBe(true);
+			expect(isServerThemeDisabled('server2')).toBe(false);
+		});
+
+		it('persists to localStorage', () => {
+			setServerThemeDisabled('server1', true);
+			const stored = localStorage.getItem('virc:serverThemePrefs');
+			const parsed = JSON.parse(stored!);
+			expect(parsed.disabledServers).toContain('server1');
+		});
+
+		it('prevents that server theme from applying', () => {
+			setServerThemeDisabled('server1', true);
+			const result = applyServerTheme({ '--accent-primary': '#ff0000' }, 'server1');
+			expect(result.applied).toBe(false);
+			expect(themeState.serverOverrides).toEqual({});
+		});
+
+		it('allows other servers themes through', () => {
+			setServerThemeDisabled('server1', true);
+			const result = applyServerTheme({ '--accent-primary': '#ff0000' }, 'server2');
+			expect(result.applied).toBe(true);
+			expect(themeState.serverOverrides).toHaveProperty('--accent-primary');
+		});
+
+		it('re-enables a specific server theme', () => {
+			setServerThemeDisabled('server1', true);
+			setServerThemeDisabled('server1', false);
+			expect(isServerThemeDisabled('server1')).toBe(false);
+		});
+
+		it('supports multiple disabled servers', () => {
+			setServerThemeDisabled('server1', true);
+			setServerThemeDisabled('server2', true);
+			expect(isServerThemeDisabled('server1')).toBe(true);
+			expect(isServerThemeDisabled('server2')).toBe(true);
+			expect(themeState.disabledServerIds).toHaveLength(2);
+		});
+	});
+
+	describe('parseColor', () => {
+		it('parses 6-digit hex', () => {
+			expect(parseColor('#ff0000')).toEqual({ r: 255, g: 0, b: 0 });
+			expect(parseColor('#1a2b3c')).toEqual({ r: 26, g: 43, b: 60 });
+		});
+
+		it('parses 3-digit hex', () => {
+			expect(parseColor('#f00')).toEqual({ r: 255, g: 0, b: 0 });
+			expect(parseColor('#abc')).toEqual({ r: 170, g: 187, b: 204 });
+		});
+
+		it('parses 8-digit hex (ignores alpha)', () => {
+			expect(parseColor('#ff0000ff')).toEqual({ r: 255, g: 0, b: 0 });
+		});
+
+		it('parses rgb() notation', () => {
+			expect(parseColor('rgb(255, 0, 0)')).toEqual({ r: 255, g: 0, b: 0 });
+		});
+
+		it('parses rgba() notation', () => {
+			expect(parseColor('rgba(10, 20, 30, 0.5)')).toEqual({ r: 10, g: 20, b: 30 });
+		});
+
+		it('returns null for invalid colors', () => {
+			expect(parseColor('red')).toBeNull();
+			expect(parseColor('not-a-color')).toBeNull();
+			expect(parseColor('')).toBeNull();
+		});
+	});
+
+	describe('relativeLuminance', () => {
+		it('returns 0 for black', () => {
+			expect(relativeLuminance(0, 0, 0)).toBeCloseTo(0, 4);
+		});
+
+		it('returns 1 for white', () => {
+			expect(relativeLuminance(255, 255, 255)).toBeCloseTo(1, 4);
+		});
+
+		it('returns intermediate value for gray', () => {
+			const lum = relativeLuminance(128, 128, 128);
+			expect(lum).toBeGreaterThan(0);
+			expect(lum).toBeLessThan(1);
+		});
+	});
+
+	describe('contrastRatio', () => {
+		it('returns 21 for black on white', () => {
+			const ratio = contrastRatio({ r: 0, g: 0, b: 0 }, { r: 255, g: 255, b: 255 });
+			expect(ratio).toBeCloseTo(21, 0);
+		});
+
+		it('returns 1 for same color', () => {
+			const ratio = contrastRatio({ r: 128, g: 128, b: 128 }, { r: 128, g: 128, b: 128 });
+			expect(ratio).toBeCloseTo(1, 4);
+		});
+
+		it('returns > 3 for readable contrast', () => {
+			// White text on dark background
+			const ratio = contrastRatio({ r: 255, g: 255, b: 255 }, { r: 30, g: 30, b: 30 });
+			expect(ratio).toBeGreaterThan(3);
+		});
+
+		it('returns < 3 for poor contrast', () => {
+			// Dark gray text on dark background
+			const ratio = contrastRatio({ r: 50, g: 50, b: 50 }, { r: 30, g: 30, b: 30 });
+			expect(ratio).toBeLessThan(3);
+		});
+	});
+
+	describe('checkThemeContrast', () => {
+		it('returns null when no text/bg combination exists', () => {
+			expect(checkThemeContrast({ '--accent-primary': '#ff0000' })).toBeNull();
+		});
+
+		it('returns null when only text colors exist', () => {
+			expect(checkThemeContrast({ '--text-primary': '#ffffff' })).toBeNull();
+		});
+
+		it('returns null when only bg colors exist', () => {
+			expect(checkThemeContrast({ '--surface-base': '#111111' })).toBeNull();
+		});
+
+		it('returns null for good contrast', () => {
+			const result = checkThemeContrast({
+				'--text-primary': '#ffffff',
+				'--surface-base': '#1a1a1a',
+			});
+			expect(result).toBeNull();
+		});
+
+		it('returns warning for poor contrast', () => {
+			const result = checkThemeContrast({
+				'--text-primary': '#333333',
+				'--surface-base': '#2a2a2a',
+			});
+			expect(result).toBeTruthy();
+			expect(result).toContain('contrast ratio');
+			expect(result).toContain('--text-primary');
+			expect(result).toContain('--surface-base');
+		});
+	});
+
+	describe('contrast warning in applyServerTheme', () => {
+		it('sets contrastWarning when theme has poor contrast', () => {
+			applyServerTheme({
+				'--text-primary': '#333333',
+				'--surface-base': '#2a2a2a',
+			});
+			expect(themeState.contrastWarning).toBeTruthy();
+		});
+
+		it('clears contrastWarning for good contrast', () => {
+			applyServerTheme({
+				'--text-primary': '#ffffff',
+				'--surface-base': '#1a1a1a',
+			});
+			expect(themeState.contrastWarning).toBeNull();
+		});
+
+		it('returns contrastWarning in result', () => {
+			const result = applyServerTheme({
+				'--text-primary': '#333333',
+				'--surface-base': '#2a2a2a',
+			});
+			expect(result.contrastWarning).toBeTruthy();
+		});
+	});
+
+	describe('dismissContrastWarning', () => {
+		it('clears the contrast warning', () => {
+			applyServerTheme({
+				'--text-primary': '#333333',
+				'--surface-base': '#2a2a2a',
+			});
+			expect(themeState.contrastWarning).toBeTruthy();
+			dismissContrastWarning();
+			expect(themeState.contrastWarning).toBeNull();
 		});
 	});
 });

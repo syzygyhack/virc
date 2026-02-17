@@ -5,7 +5,15 @@
 	import { formatMessage } from '$lib/irc/parser';
 	import { audioSettings, type VideoQuality } from '$lib/state/audioSettings.svelte';
 	import { appSettings, type ZoomLevel, type SystemMessageDisplay } from '$lib/state/appSettings.svelte';
-	import { themeState, setTheme, type Theme } from '$lib/state/theme.svelte';
+	import {
+		themeState,
+		setTheme,
+		setServerThemesDisabled,
+		setServerThemeDisabled,
+		isServerThemeDisabled,
+		dismissContrastWarning,
+		type Theme,
+	} from '$lib/state/theme.svelte';
 	import {
 		getRegisteredBindings,
 		setCustomBinding,
@@ -19,7 +27,7 @@
 	import { channelState } from '$lib/state/channels.svelte';
 	import { getNotificationLevel, setNotificationLevel, type NotificationLevel } from '$lib/state/notifications.svelte';
 	import { getToken } from '$lib/api/auth';
-	import { getActiveServer } from '$lib/state/servers.svelte';
+	import { getActiveServer, serverState } from '$lib/state/servers.svelte';
 	import { changePassword, changeEmail, type AccountApiResult } from '$lib/api/account';
 	import type { IRCConnection } from '$lib/irc/connection';
 
@@ -875,6 +883,55 @@
 								</button>
 							{/each}
 						</div>
+					</div>
+
+					<div class="section-divider"></div>
+
+					<div class="settings-section">
+						<h3 class="section-title">Server Themes</h3>
+						<p class="setting-hint">Servers can customize colors. Disable server themes if you prefer your own.</p>
+
+						{#if themeState.contrastWarning}
+							<div class="contrast-warning">
+								<span class="contrast-warning-text">{themeState.contrastWarning}</span>
+								<div class="contrast-warning-actions">
+									<button class="contrast-warning-btn" onclick={() => dismissContrastWarning()}>Dismiss</button>
+									<button class="contrast-warning-btn danger" onclick={() => setServerThemesDisabled(true)}>Disable Server Themes</button>
+								</div>
+							</div>
+						{/if}
+
+						<label class="toggle-row">
+							<input
+								type="checkbox"
+								class="toggle-checkbox"
+								checked={themeState.serverThemesDisabled}
+								onchange={(e) => setServerThemesDisabled(e.currentTarget.checked)}
+							/>
+							<div class="toggle-info">
+								<span class="toggle-label">Disable all server themes</span>
+								<span class="toggle-hint">Ignore color customizations from all servers.</span>
+							</div>
+						</label>
+
+						{#if !themeState.serverThemesDisabled && serverState.servers.length > 0}
+							<div class="per-server-toggles">
+								<p class="setting-hint">Disable themes for specific servers:</p>
+								{#each serverState.servers as server (server.id)}
+									<label class="toggle-row">
+										<input
+											type="checkbox"
+											class="toggle-checkbox"
+											checked={isServerThemeDisabled(server.id)}
+											onchange={(e) => setServerThemeDisabled(server.id, e.currentTarget.checked)}
+										/>
+										<div class="toggle-info">
+											<span class="toggle-label">{server.name || server.id}</span>
+										</div>
+									</label>
+								{/each}
+							</div>
+						{/if}
 					</div>
 
 					<div class="section-divider"></div>
@@ -2167,5 +2224,58 @@
 			flex: 1;
 			overflow-y: auto;
 		}
+	}
+
+	/* ---- Server theme toggles ---- */
+
+	.contrast-warning {
+		background: color-mix(in srgb, var(--warning) 15%, var(--surface-base));
+		border: 1px solid var(--warning);
+		border-radius: var(--radius-md);
+		padding: 10px 14px;
+		margin-bottom: 12px;
+	}
+
+	.contrast-warning-text {
+		font-size: var(--font-sm);
+		color: var(--text-primary);
+		display: block;
+		margin-bottom: 8px;
+	}
+
+	.contrast-warning-actions {
+		display: flex;
+		gap: 8px;
+	}
+
+	.contrast-warning-btn {
+		padding: 4px 12px;
+		font-size: var(--font-xs);
+		border-radius: var(--radius-sm);
+		border: 1px solid var(--interactive-muted);
+		background: var(--surface-high);
+		color: var(--text-secondary);
+		cursor: pointer;
+	}
+
+	.contrast-warning-btn:hover {
+		background: var(--surface-highest);
+	}
+
+	.contrast-warning-btn.danger {
+		background: var(--danger);
+		color: #fff;
+		border-color: var(--danger);
+	}
+
+	.contrast-warning-btn.danger:hover {
+		filter: brightness(1.1);
+	}
+
+	.per-server-toggles {
+		margin-top: 8px;
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
 	}
 </style>

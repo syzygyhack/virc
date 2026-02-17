@@ -67,8 +67,8 @@ services:
       retries: 3
     restart: unless-stopped
 
-  virc-files:
-    build: ./virc-files
+  accord-files:
+    build: ./accord-files
     ports:
       - "8080:8080"   # API — remove in production (Caddy proxies /api)
     environment:
@@ -84,8 +84,8 @@ services:
       BASE_URL: ${BASE_URL:-}
       MAX_FILE_SIZE: ${MAX_FILE_SIZE:-}
     volumes:
-      - virc-uploads:/app/uploads
-      - virc-data:/app/data
+      - accord-uploads:/app/uploads
+      - accord-data:/app/data
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
       interval: 5s
@@ -108,16 +108,16 @@ services:
       SITE_ADDRESS: ${SITE_ADDRESS:-:80}
     volumes:
       - ./config/caddy/Caddyfile:/etc/caddy/Caddyfile
-      - ./virc-client/build:/srv/virc
+      - ./accord-client/build:/srv/accord
     depends_on:
       ergo:
         condition: service_healthy
-      virc-files:
+      accord-files:
         condition: service_healthy
     restart: unless-stopped
 
 volumes:
   ergo-data:
   mysql-data:
-  virc-uploads:
-  virc-data:
+  accord-uploads:
+  accord-data:

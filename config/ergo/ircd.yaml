@@ -25,12 +25,12 @@
 # network configuration
 network:
     # name of the network
-    name: virc
+    name: accord
 
 # server configuration
 server:
     # server name
-    name: virc.local
+    name: accord.local
 
     # addresses to listen on
     listeners:
@@ -248,7 +248,7 @@ server:
         # whether to limit the total number of concurrent connections per IP/CIDR
         count: true
         # maximum concurrent connections per IP/CIDR
-        # Raised from 16: virc users behind NAT or using multiple devices
+        # Raised from 16: accord users behind NAT or using multiple devices
         # (desktop + phone + web) can exceed the default quickly.
         max-concurrent-connections: 64
 
@@ -366,7 +366,7 @@ server:
     # e.g., `NickServ!NickServ@localhost`. uncomment this to override:
     #override-services-hostname: "example.network"
 
-    # virc is a closed-loop system (we control server + all clients).
+    # accord is a closed-loop system (we control server + all clients).
     # Increase from the default 512 to allow longer messages, file URLs,
     # and markdown without silent truncation or rejection.
     max-line-len: 2048
@@ -464,7 +464,7 @@ accounts:
         duration:  1m
 
         # number of attempts allowed within the window
-        # Raised from 3: the auth bridge (virc-files) validates credentials
+        # Raised from 3: the auth bridge (accord-files) validates credentials
         # via Ergo's HTTP API, and users may also connect via SASL —
         # both count toward this limit for the same account.
         max-attempts: 6
@@ -895,7 +895,7 @@ fakelag:
     window: 1s
 
     # clients can send this many commands without fakelag being imposed
-    # Raised from 5: virc sends typing indicators, reactions, read markers,
+    # Raised from 5: accord sends typing indicators, reactions, read markers,
     # and messages in rapid succession during normal use.
     burst-limit: 10
 

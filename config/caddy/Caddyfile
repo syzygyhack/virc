@@ -18,17 +18,17 @@
 
     # File uploads, auth bridge
     handle /api/* {
-        reverse_proxy virc-files:8080
+        reverse_proxy accord-files:8080
     }
 
     # Server config discovery
     handle /.well-known/* {
-        reverse_proxy virc-files:8080
+        reverse_proxy accord-files:8080
     }
 
     # Static client files with SPA fallback
     handle {
-        root * /srv/virc
+        root * /srv/accord
 
         # Immutable hashed assets — cache forever
         @immutable path /_app/immutable/*

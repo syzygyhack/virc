@@ -71,7 +71,7 @@ describe('theme state', () => {
 
 		it('persists to localStorage', () => {
 			setTheme('amoled');
-			expect(localStorage.getItem('virc:theme')).toBe('amoled');
+			expect(localStorage.getItem('accord:theme')).toBe('amoled');
 		});
 
 		it('sets data-theme on document element', () => {
@@ -245,7 +245,7 @@ describe('theme state', () => {
 
 		it('persists to localStorage', () => {
 			setServerThemesDisabled(true);
-			const stored = localStorage.getItem('virc:serverThemePrefs');
+			const stored = localStorage.getItem('accord:serverThemePrefs');
 			expect(stored).toBeTruthy();
 			const parsed = JSON.parse(stored!);
 			expect(parsed.disableAll).toBe(true);
@@ -284,7 +284,7 @@ describe('theme state', () => {
 
 		it('persists to localStorage', () => {
 			setServerThemeDisabled('server1', true);
-			const stored = localStorage.getItem('virc:serverThemePrefs');
+			const stored = localStorage.getItem('accord:serverThemePrefs');
 			const parsed = JSON.parse(stored!);
 			expect(parsed.disabledServers).toContain('server1');
 		});

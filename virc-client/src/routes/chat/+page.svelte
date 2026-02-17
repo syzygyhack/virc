@@ -391,7 +391,7 @@
 	function handleEmojiSelect(emoji: string): void {
 		if (emojiPickerTarget === '_input_') {
 			// Insert emoji into message input by dispatching a custom event
-			window.dispatchEvent(new CustomEvent('virc:insert-emoji', { detail: { emoji } }));
+			window.dispatchEvent(new CustomEvent('accord:insert-emoji', { detail: { emoji } }));
 			emojiPickerTarget = null;
 			emojiPickerPosition = null;
 			return;
@@ -561,14 +561,14 @@
 		rehydrate();
 
 		// Determine server URLs from localStorage (set during login)
-		const serverUrl = localStorage.getItem('virc:serverUrl')
+		const serverUrl = localStorage.getItem('accord:serverUrl')
 			?? (import.meta.env.DEV ? `ws://${window.location.hostname}:8097` : null);
 		if (!serverUrl) {
 			error = 'No server URL configured. Please log in again.';
 			initializing = false;
 			return;
 		}
-		const filesUrl = localStorage.getItem('virc:filesUrl') ?? null;
+		const filesUrl = localStorage.getItem('accord:filesUrl') ?? null;
 
 		error = null;
 
@@ -684,7 +684,7 @@
 			// 10b. Show welcome modal on first join (once per server)
 			if (config?.welcome?.message) {
 				const serverId = serverUrl;
-				const dismissKey = `virc:welcome-dismissed:${serverId}`;
+				const dismissKey = `accord:welcome-dismissed:${serverId}`;
 				if (!localStorage.getItem(dismissKey)) {
 					welcomeConfig = {
 						serverName: config.name ?? 'IRC Server',
@@ -838,7 +838,7 @@
 
 	/** Scroll the message list by dispatching a custom event. */
 	function scrollMessageList(action: 'pageup' | 'pagedown' | 'home' | 'end'): void {
-		window.dispatchEvent(new CustomEvent('virc:scroll-messages', { detail: { action } }));
+		window.dispatchEvent(new CustomEvent('accord:scroll-messages', { detail: { action } }));
 	}
 
 	// Track the msgid and channel being edited — redaction deferred until user confirms send
@@ -868,7 +868,7 @@
 				// Set the input textarea value by dispatching a custom event
 				// The MessageInput component will pick this up
 				window.dispatchEvent(
-					new CustomEvent('virc:edit-message', { detail: { text: m.text } })
+					new CustomEvent('accord:edit-message', { detail: { text: m.text } })
 				);
 				return;
 			}
@@ -900,7 +900,7 @@
 		editingMsgid = msg.msgid;
 		editingChannel = channel;
 		window.dispatchEvent(
-			new CustomEvent('virc:edit-message', { detail: { text: msg.text } })
+			new CustomEvent('accord:edit-message', { detail: { text: msg.text } })
 		);
 	}
 
@@ -934,7 +934,7 @@
 	/** Scroll to a specific message in the message list (used by pinned messages). */
 	function handleScrollToMessage(msgid: string): void {
 		window.dispatchEvent(
-			new CustomEvent('virc:scroll-to-message', { detail: { msgid } })
+			new CustomEvent('accord:scroll-to-message', { detail: { msgid } })
 		);
 	}
 
@@ -947,7 +947,7 @@
 	/** Insert @nick mention into the message input via custom event. */
 	function handleMemberMention(nick: string): void {
 		window.dispatchEvent(
-			new CustomEvent('virc:insert-mention', { detail: { nick } })
+			new CustomEvent('accord:insert-mention', { detail: { nick } })
 		);
 	}
 
@@ -963,9 +963,9 @@
 
 	/** Dismiss the welcome modal and persist in localStorage. */
 	function dismissWelcome(): void {
-		const serverUrl = localStorage.getItem('virc:serverUrl');
+		const serverUrl = localStorage.getItem('accord:serverUrl');
 		if (serverUrl) {
-			localStorage.setItem(`virc:welcome-dismissed:${serverUrl}`, '1');
+			localStorage.setItem(`accord:welcome-dismissed:${serverUrl}`, '1');
 		}
 		welcomeConfig = null;
 	}
@@ -1371,8 +1371,8 @@
 		// Best-effort credential cleanup (async, but localStorage clears synchronously)
 		void clearCredentials();
 		clearToken();
-		localStorage.removeItem('virc:serverUrl');
-		localStorage.removeItem('virc:filesUrl');
+		localStorage.removeItem('accord:serverUrl');
+		localStorage.removeItem('accord:filesUrl');
 		// Hard navigate — bypasses SvelteKit lifecycle that may be blocked
 		window.location.href = '/login';
 	}

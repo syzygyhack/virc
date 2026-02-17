@@ -40,7 +40,7 @@ describe('appSettings', () => {
 
 		it('persists to localStorage', () => {
 			appSettings.systemMessageDisplay = 'smart';
-			const stored = JSON.parse(localStorage.getItem('virc:appSettings')!);
+			const stored = JSON.parse(localStorage.getItem('accord:appSettings')!);
 			expect(stored.systemMessageDisplay).toBe('smart');
 		});
 
@@ -58,7 +58,7 @@ describe('appSettings', () => {
 
 		it('persists to localStorage', () => {
 			appSettings.zoom = 100;
-			const stored = JSON.parse(localStorage.getItem('virc:appSettings')!);
+			const stored = JSON.parse(localStorage.getItem('accord:appSettings')!);
 			expect(stored.zoom).toBe(100);
 		});
 	});
@@ -75,7 +75,7 @@ describe('appSettings', () => {
 
 		it('persists to localStorage', () => {
 			appSettings.showRawIrc = true;
-			const stored = JSON.parse(localStorage.getItem('virc:appSettings')!);
+			const stored = JSON.parse(localStorage.getItem('accord:appSettings')!);
 			expect(stored.showRawIrc).toBe(true);
 		});
 
@@ -98,7 +98,7 @@ describe('appSettings', () => {
 
 		it('persists to localStorage', () => {
 			appSettings.developerMode = true;
-			const stored = JSON.parse(localStorage.getItem('virc:appSettings')!);
+			const stored = JSON.parse(localStorage.getItem('accord:appSettings')!);
 			expect(stored.developerMode).toBe(true);
 		});
 
@@ -131,7 +131,7 @@ describe('appSettings', () => {
 
 		it('persists to localStorage', () => {
 			appSettings.sidebarWidth = 280;
-			const stored = JSON.parse(localStorage.getItem('virc:appSettings')!);
+			const stored = JSON.parse(localStorage.getItem('accord:appSettings')!);
 			expect(stored.sidebarWidth).toBe(280);
 		});
 
@@ -142,7 +142,7 @@ describe('appSettings', () => {
 		});
 
 		it('handles non-number values on load', () => {
-			localStorage.setItem('virc:appSettings', JSON.stringify({ sidebarWidth: 'garbage' }));
+			localStorage.setItem('accord:appSettings', JSON.stringify({ sidebarWidth: 'garbage' }));
 			resetAppSettings();
 			expect(appSettings.sidebarWidth).toBe(SIDEBAR_DEFAULT);
 		});
@@ -170,7 +170,7 @@ describe('appSettings', () => {
 
 		it('persists to localStorage', () => {
 			appSettings.memberListWidth = 220;
-			const stored = JSON.parse(localStorage.getItem('virc:appSettings')!);
+			const stored = JSON.parse(localStorage.getItem('accord:appSettings')!);
 			expect(stored.memberListWidth).toBe(220);
 		});
 

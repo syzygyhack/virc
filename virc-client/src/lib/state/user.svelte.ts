@@ -53,8 +53,8 @@ export async function logout(): Promise<void> {
 	await clearCredentials();
 	clearToken();
 	if (typeof localStorage !== 'undefined') {
-		localStorage.removeItem('virc:serverUrl');
-		localStorage.removeItem('virc:filesUrl');
+		localStorage.removeItem('accord:serverUrl');
+		localStorage.removeItem('accord:filesUrl');
 	}
 	userState.account = null;
 	userState.nick = null;
@@ -83,15 +83,15 @@ export async function getStoredCredentials(): Promise<StoredCredentials | null> 
 export function rehydrate(): void {
 	if (typeof localStorage === 'undefined') return;
 	// Check new key first, then legacy
-	const account = localStorage.getItem('virc:account');
+	const account = localStorage.getItem('accord:account');
 	if (account) {
 		userState.account = account;
 		userState.nick = account;
 		return;
 	}
-	// Legacy: check virc:credentials
+	// Legacy: check accord:credentials
 	if (hasStoredCredentials()) {
-		const raw = localStorage.getItem('virc:credentials');
+		const raw = localStorage.getItem('accord:credentials');
 		if (raw) {
 			try {
 				const parsed = JSON.parse(raw) as { account: string };

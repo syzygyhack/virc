@@ -10,8 +10,8 @@
 	function handleLogin(): void {
 		void clearCredentials();
 		clearToken();
-		localStorage.removeItem('virc:serverUrl');
-		localStorage.removeItem('virc:filesUrl');
+		localStorage.removeItem('accord:serverUrl');
+		localStorage.removeItem('accord:filesUrl');
 		// Hard navigate — avoids SvelteKit state issues during reconnect/auth failures
 		window.location.href = '/login';
 	}

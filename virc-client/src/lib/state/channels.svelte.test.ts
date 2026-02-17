@@ -156,13 +156,13 @@ describe('channels UI state', () => {
 				{ name: 'Text', channels: ['#general', '#dev', '#help'] },
 			]);
 			reorderChannels('Text', 0, 2);
-			const stored = JSON.parse(storage.getItem('virc:channelOrder')!);
+			const stored = JSON.parse(storage.getItem('accord:channelOrder')!);
 			expect(stored).toEqual({ Text: ['#dev', '#help', '#general'] });
 		});
 
 		it('restores saved order when setCategories is called', () => {
 			// Simulate a previously saved order
-			storage.setItem('virc:channelOrder', JSON.stringify({
+			storage.setItem('accord:channelOrder', JSON.stringify({
 				Text: ['#help', '#general', '#dev'],
 			}));
 			setCategories([
@@ -174,7 +174,7 @@ describe('channels UI state', () => {
 		});
 
 		it('appends new channels not in saved order', () => {
-			storage.setItem('virc:channelOrder', JSON.stringify({
+			storage.setItem('accord:channelOrder', JSON.stringify({
 				Text: ['#dev', '#general'],
 			}));
 			setCategories([
@@ -187,7 +187,7 @@ describe('channels UI state', () => {
 		});
 
 		it('drops saved channels removed from config', () => {
-			storage.setItem('virc:channelOrder', JSON.stringify({
+			storage.setItem('accord:channelOrder', JSON.stringify({
 				Text: ['#dev', '#help', '#general', '#removed'],
 			}));
 			setCategories([
@@ -202,13 +202,13 @@ describe('channels UI state', () => {
 		it('resetChannelOrder clears localStorage', () => {
 			setCategories([{ name: 'Text', channels: ['#a', '#b'] }]);
 			reorderChannels('Text', 0, 1);
-			expect(storage.getItem('virc:channelOrder')).not.toBeNull();
+			expect(storage.getItem('accord:channelOrder')).not.toBeNull();
 			resetChannelOrder();
-			expect(storage.getItem('virc:channelOrder')).toBeNull();
+			expect(storage.getItem('accord:channelOrder')).toBeNull();
 		});
 
 		it('handles corrupt localStorage gracefully', () => {
-			storage.setItem('virc:channelOrder', 'not valid json');
+			storage.setItem('accord:channelOrder', 'not valid json');
 			// Should not throw
 			setCategories([
 				{ name: 'Text', channels: ['#general', '#dev'] },

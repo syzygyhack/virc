@@ -288,8 +288,8 @@
 	function handleLogout(): void {
 		// Best-effort credential cleanup (async, but localStorage clears synchronously)
 		void clearCredentials();
-		localStorage.removeItem('virc:serverUrl');
-		localStorage.removeItem('virc:filesUrl');
+		localStorage.removeItem('accord:serverUrl');
+		localStorage.removeItem('accord:filesUrl');
 		clearToken();
 		// Hard navigate — bypasses SvelteKit lifecycle
 		window.location.href = '/login';

@@ -146,7 +146,7 @@
 
 		const token = getToken();
 		const filesUrl = typeof localStorage !== 'undefined'
-			? localStorage.getItem('virc:filesUrl')
+			? localStorage.getItem('accord:filesUrl')
 			: null;
 
 		if (!token || !filesUrl) {

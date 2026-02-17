@@ -208,7 +208,7 @@ describe('servers state', () => {
 		it('saves server order when adding a server', () => {
 			addServer(makeServer('a'));
 			addServer(makeServer('b'));
-			const stored = JSON.parse(storage.getItem('virc:serverOrder')!);
+			const stored = JSON.parse(storage.getItem('accord:serverOrder')!);
 			expect(stored).toEqual(['a', 'b']);
 		});
 
@@ -217,7 +217,7 @@ describe('servers state', () => {
 			addServer(makeServer('b'));
 			addServer(makeServer('c'));
 			reorderServers(0, 2);
-			const stored = JSON.parse(storage.getItem('virc:serverOrder')!);
+			const stored = JSON.parse(storage.getItem('accord:serverOrder')!);
 			expect(stored).toEqual(['b', 'c', 'a']);
 		});
 
@@ -226,15 +226,15 @@ describe('servers state', () => {
 			addServer(makeServer('b'));
 			addServer(makeServer('c'));
 			removeServer('b');
-			const stored = JSON.parse(storage.getItem('virc:serverOrder')!);
+			const stored = JSON.parse(storage.getItem('accord:serverOrder')!);
 			expect(stored).toEqual(['a', 'c']);
 		});
 
 		it('resetServerOrder clears localStorage', () => {
 			addServer(makeServer('a'));
-			expect(storage.getItem('virc:serverOrder')).not.toBeNull();
+			expect(storage.getItem('accord:serverOrder')).not.toBeNull();
 			resetServerOrder();
-			expect(storage.getItem('virc:serverOrder')).toBeNull();
+			expect(storage.getItem('accord:serverOrder')).toBeNull();
 		});
 	});
 });

@@ -354,7 +354,7 @@ describe('keybinding customization', () => {
 		registerKeybinding({ key: 'k', ctrl: true, handler: () => true, description: 'Quick switch' });
 		setCustomBinding('Quick switch', { key: 'p', ctrl: true });
 
-		const stored = localStorage.getItem('virc:keybindingOverrides');
+		const stored = localStorage.getItem('accord:keybindingOverrides');
 		expect(stored).toBeTruthy();
 		const parsed = JSON.parse(stored!);
 		expect(parsed['Quick switch'].key).toBe('p');
@@ -366,7 +366,7 @@ describe('keybinding customization', () => {
 		setCustomBinding('Quick switch', { key: 'p', ctrl: true });
 		resetAllBindings();
 
-		expect(localStorage.getItem('virc:keybindingOverrides')).toBeNull();
+		expect(localStorage.getItem('accord:keybindingOverrides')).toBeNull();
 	});
 });
 

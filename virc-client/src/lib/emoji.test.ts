@@ -200,12 +200,12 @@ describe('frequent emoji', () => {
 		});
 
 		it('returns stored frequent emoji', () => {
-			localStorage.setItem('virc:frequent-emoji', JSON.stringify(['😀', '👍']));
+			localStorage.setItem('accord:frequent-emoji', JSON.stringify(['😀', '👍']));
 			expect(getFrequentEmoji()).toEqual(['😀', '👍']);
 		});
 
 		it('returns empty array for corrupted localStorage', () => {
-			localStorage.setItem('virc:frequent-emoji', 'not json');
+			localStorage.setItem('accord:frequent-emoji', 'not json');
 			expect(getFrequentEmoji()).toEqual([]);
 		});
 	});
@@ -246,7 +246,7 @@ describe('frequent emoji', () => {
 
 		it('persists to localStorage', () => {
 			recordEmojiUse('🎉');
-			const stored = localStorage.getItem('virc:frequent-emoji');
+			const stored = localStorage.getItem('accord:frequent-emoji');
 			expect(stored).not.toBeNull();
 			const parsed = JSON.parse(stored!);
 			expect(parsed).toEqual(['🎉']);

@@ -61,26 +61,26 @@ describe('credential helpers', () => {
 	});
 
 	it('returns null and clears storage for corrupted JSON', async () => {
-		storage.setItem('virc:credentials', 'not valid json{{{');
+		storage.setItem('accord:credentials', 'not valid json{{{');
 		expect(await getCredentials()).toBeNull();
 		// Should have cleaned up the corrupted entry
-		expect(storage.getItem('virc:credentials')).toBeNull();
+		expect(storage.getItem('accord:credentials')).toBeNull();
 	});
 
 	it('returns null and clears storage for invalid credential shape', async () => {
-		storage.setItem('virc:credentials', JSON.stringify({ account: 123, password: null }));
+		storage.setItem('accord:credentials', JSON.stringify({ account: 123, password: null }));
 		expect(await getCredentials()).toBeNull();
-		expect(storage.getItem('virc:credentials')).toBeNull();
+		expect(storage.getItem('accord:credentials')).toBeNull();
 	});
 
 	it('returns null and clears storage for missing fields', async () => {
-		storage.setItem('virc:credentials', JSON.stringify({ foo: 'bar' }));
+		storage.setItem('accord:credentials', JSON.stringify({ foo: 'bar' }));
 		expect(await getCredentials()).toBeNull();
-		expect(storage.getItem('virc:credentials')).toBeNull();
+		expect(storage.getItem('accord:credentials')).toBeNull();
 	});
 
-	it('isAuthenticated() checks virc:account key', async () => {
-		storage.setItem('virc:account', 'alice');
+	it('isAuthenticated() checks accord:account key', async () => {
+		storage.setItem('accord:account', 'alice');
 		expect(isAuthenticated()).toBe(true);
 	});
 });

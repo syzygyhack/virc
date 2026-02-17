@@ -233,7 +233,7 @@ describe('notifications state', () => {
 			it('persists to localStorage', () => {
 				setNotificationLevel('#test', 'all');
 				setNotificationLevel('#dev', 'mute');
-				const stored = localStorage.getItem('virc:notificationLevels');
+				const stored = localStorage.getItem('accord:notificationLevels');
 				expect(stored).not.toBeNull();
 				const parsed = JSON.parse(stored!);
 				expect(parsed['#test']).toBe('all');
@@ -244,7 +244,7 @@ describe('notifications state', () => {
 				setNotificationLevel('#test', 'all');
 				setNotificationLevel('#test', 'mentions');
 				expect(getNotificationLevel('#test')).toBe('mentions');
-				const stored = localStorage.getItem('virc:notificationLevels');
+				const stored = localStorage.getItem('accord:notificationLevels');
 				if (stored) {
 					const parsed = JSON.parse(stored);
 					expect(parsed['#test']).toBeUndefined();
@@ -331,7 +331,7 @@ describe('notifications state', () => {
 			it('clears localStorage', () => {
 				setNotificationLevel('#test', 'all');
 				resetNotificationLevels();
-				const stored = localStorage.getItem('virc:notificationLevels');
+				const stored = localStorage.getItem('accord:notificationLevels');
 				expect(stored).toBeNull();
 			});
 		});
@@ -343,7 +343,7 @@ describe('notifications state', () => {
 				setNotificationLevel('#dev', 'all');
 
 				// Verify localStorage has the data
-				const stored = localStorage.getItem('virc:notificationLevels');
+				const stored = localStorage.getItem('accord:notificationLevels');
 				expect(stored).not.toBeNull();
 				const parsed = JSON.parse(stored!);
 				expect(parsed['#test']).toBe('mute');
@@ -358,7 +358,7 @@ describe('notifications state', () => {
 				setNotificationLevel('#test', 'mute');
 				resetNotificationLevels();
 				expect(getNotificationLevel('#test')).toBe('mentions');
-				expect(localStorage.getItem('virc:notificationLevels')).toBeNull();
+				expect(localStorage.getItem('accord:notificationLevels')).toBeNull();
 			});
 		});
 	});

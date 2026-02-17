@@ -18,7 +18,7 @@
 	function defaultServerUrl(): string {
 		if (typeof window === 'undefined') return '';
 		// Restore from last successful login
-		const saved = localStorage.getItem('virc:serverUrl');
+		const saved = localStorage.getItem('accord:serverUrl');
 		if (saved) return saved;
 		// In dev mode, connect directly to Ergo's exposed WebSocket port
 		// to bypass the Vite proxy (which has issues relaying WebSocket frames on Windows).
@@ -100,11 +100,11 @@
 			}
 
 			// 6. Store server URLs for chat page reconnect
-			localStorage.setItem('virc:serverUrl', serverUrl);
+			localStorage.setItem('accord:serverUrl', serverUrl);
 			if (discoveredFilesUrl) {
-				localStorage.setItem('virc:filesUrl', discoveredFilesUrl);
+				localStorage.setItem('accord:filesUrl', discoveredFilesUrl);
 			} else {
-				localStorage.removeItem('virc:filesUrl');
+				localStorage.removeItem('accord:filesUrl');
 			}
 
 			// 7. Disconnect this temporary connection (chat page will create its own)
@@ -214,11 +214,11 @@
 				}
 			}
 
-			localStorage.setItem('virc:serverUrl', serverUrl);
+			localStorage.setItem('accord:serverUrl', serverUrl);
 			if (discoveredFilesUrl) {
-				localStorage.setItem('virc:filesUrl', discoveredFilesUrl);
+				localStorage.setItem('accord:filesUrl', discoveredFilesUrl);
 			} else {
-				localStorage.removeItem('virc:filesUrl');
+				localStorage.removeItem('accord:filesUrl');
 			}
 
 			conn.disconnect();

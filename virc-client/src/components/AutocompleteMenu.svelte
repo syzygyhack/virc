@@ -1,10 +1,12 @@
-<script lang="ts">
-	interface CompletionItem {
+<script module lang="ts">
+	export interface CompletionItem {
 		label: string;
 		value: string;
 		detail?: string;
 	}
+</script>
 
+<script lang="ts">
 	interface Props {
 		items: CompletionItem[];
 		selectedIndex: number;
@@ -23,8 +25,6 @@
 			el?.scrollIntoView({ block: 'nearest' });
 		});
 	});
-
-	export type { CompletionItem };
 </script>
 
 {#if items.length > 0}

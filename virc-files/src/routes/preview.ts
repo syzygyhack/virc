@@ -274,10 +274,14 @@ function parseOgTags(html: string): Omit<OgMetadata, "url"> {
  */
 async function resolvePinnedUrl(parsed: URL): Promise<{ fetchUrl: string; hostHeader: string }> {
   const hostname = parsed.hostname;
+  // Use parsed.host (hostname:port) for the Host header so non-default
+  // ports are preserved. parsed.host omits the port when it matches the
+  // protocol default (80/443), which is the correct HTTP behaviour.
+  const hostHeader = parsed.host;
 
   // If already an IP literal, no resolution needed (isPrivateHost already checked)
   if (parseIPv4(hostname) || hostname === "::1" || hostname.startsWith("[")) {
-    return { fetchUrl: parsed.href, hostHeader: hostname };
+    return { fetchUrl: parsed.href, hostHeader };
   }
 
   // Resolve and validate all IPs
@@ -296,14 +300,14 @@ async function resolvePinnedUrl(parsed: URL): Promise<{ fetchUrl: string; hostHe
     // Pin to the first resolved IPv4 address
     const pinnedUrl = new URL(parsed.href);
     pinnedUrl.hostname = v4Addrs[0];
-    return { fetchUrl: pinnedUrl.href, hostHeader: hostname };
+    return { fetchUrl: pinnedUrl.href, hostHeader };
   }
 
   if (v6Addrs.length > 0) {
     // Pin to the first resolved IPv6 address (bracket notation for URL)
     const pinnedUrl = new URL(parsed.href);
     pinnedUrl.hostname = `[${v6Addrs[0]}]`;
-    return { fetchUrl: pinnedUrl.href, hostHeader: hostname };
+    return { fetchUrl: pinnedUrl.href, hostHeader };
   }
 
   // No addresses resolved — assertPublicResolution would have thrown,
@@ -407,8 +411,20 @@ preview.get("/api/preview", authMiddleware, async (c) => {
     const html = await fetchUrl(parsed.href);
     const og = parseOgTags(html);
 
+    // Resolve relative og:image URLs against the page URL so the client
+    // receives an absolute URL it can render directly.
+    let image = og.image;
+    if (image) {
+      try {
+        image = new URL(image, parsed.href).href;
+      } catch {
+        image = null; // Malformed URL — drop it
+      }
+    }
+
     const result: OgMetadata = {
       ...og,
+      image,
       url: parsed.href,
     };
 

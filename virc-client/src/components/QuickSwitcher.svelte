@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { tick } from 'svelte';
+	import { useTrapFocusOnly } from '$lib/utils/a11y';
 	import {
 		channelUIState,
 		setActiveChannel,
@@ -110,7 +111,7 @@
 	}
 </script>
 
-<div class="quick-switcher-overlay" role="dialog" aria-modal="true" aria-label="Quick channel switcher" tabindex="-1" onclick={handleOverlayClick} onkeydown={(e) => { if (e.key === 'Escape') onclose(); }}>
+<div class="quick-switcher-overlay" role="dialog" aria-modal="true" aria-label="Quick channel switcher" tabindex="-1" onclick={handleOverlayClick} onkeydown={(e) => { if (e.key === 'Escape') onclose(); }} use:useTrapFocusOnly>
 	<div class="quick-switcher">
 		<input
 			bind:this={inputEl}

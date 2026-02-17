@@ -9,6 +9,12 @@
 	import { DEFAULT_ROLES, MODE_ORDER } from '$lib/constants';
 	import type { IRCConnection } from '$lib/irc/connection';
 	import UserProfilePopout from './UserProfilePopout.svelte';
+	import { handleMenuKeydown, focusFirst } from '$lib/utils/a11y';
+
+	/** Estimated height per member row (px) — used for virtual scroll spacers. */
+	const ROW_HEIGHT = 28;
+	/** Overscan rows above/below the visible window. */
+	const OVERSCAN = 10;
 
 	/** Delay in ms before showing hover card. */
 	const HOVER_DELAY = 400;
@@ -292,6 +298,73 @@
 		if (!member.highestMode) return null;
 		return DEFAULT_ROLES[member.highestMode]?.name ?? null;
 	}
+
+	// --- Virtual scroll ---
+
+	let scrollEl: HTMLDivElement | undefined = $state();
+	let scrollTop = $state(0);
+	let scrollHeight = $state(600);
+
+	// Measure actual container height once mounted so the first render
+	// doesn't rely on the 600px default.
+	$effect(() => {
+		if (scrollEl) {
+			scrollHeight = scrollEl.clientHeight;
+		}
+	});
+
+	function handleScroll(e: Event): void {
+		const el = e.currentTarget as HTMLElement;
+		scrollTop = el.scrollTop;
+		scrollHeight = el.clientHeight;
+	}
+
+	/**
+	 * Compute the visible slice of a member array based on current scroll
+	 * position and the group's vertical offset within the scroll container.
+	 * Returns { startIndex, endIndex, topSpacer, bottomSpacer } for the group.
+	 */
+	function getVisibleSlice(
+		members: Member[],
+		groupOffsetPx: number,
+	): { start: number; end: number; topPx: number; bottomPx: number } {
+		const total = members.length;
+		if (total === 0) return { start: 0, end: 0, topPx: 0, bottomPx: 0 };
+
+		const viewTop = scrollTop;
+		const viewBottom = scrollTop + scrollHeight;
+
+		// Calculate which rows are visible relative to the group offset
+		const firstVisible = Math.floor((viewTop - groupOffsetPx) / ROW_HEIGHT) - OVERSCAN;
+		const lastVisible = Math.ceil((viewBottom - groupOffsetPx) / ROW_HEIGHT) + OVERSCAN;
+
+		const start = Math.max(0, firstVisible);
+		const end = Math.min(total, lastVisible);
+
+		return {
+			start,
+			end,
+			topPx: start * ROW_HEIGHT,
+			bottomPx: Math.max(0, (total - end) * ROW_HEIGHT),
+		};
+	}
+
+	/**
+	 * Cumulative group offsets: each group header is ~30px, each expanded
+	 * member row is ROW_HEIGHT. Pre-compute to pass to getVisibleSlice.
+	 */
+	let groupOffsets = $derived.by((): number[] => {
+		const offsets: number[] = [];
+		let y = 0; // Start after the member-header element
+		for (const group of roleGroups) {
+			offsets.push(y);
+			y += 30; // Role header height
+			if (!group.collapsed) {
+				y += group.members.length * ROW_HEIGHT;
+			}
+		}
+		return offsets;
+	});
 </script>
 
 <svelte:window onclick={handleWindowClick} />
@@ -301,13 +374,14 @@
 		<span class="member-header-text">Members — {totalMembers}</span>
 	</div>
 
-	<div class="member-scroll">
+	<div class="member-scroll" bind:this={scrollEl} onscroll={handleScroll}>
 		{#if roleGroups.length === 0}
 			<div class="empty-state">
 				<span class="empty-state-text">It's quiet... nobody else is online</span>
 			</div>
 		{/if}
-		{#each roleGroups as group (group.key)}
+		{#each roleGroups as group, groupIdx (group.key)}
+			{@const slice = !group.collapsed ? getVisibleSlice(group.members, groupOffsets[groupIdx] ?? 0) : { start: 0, end: 0, topPx: 0, bottomPx: 0 }}
 			<div class="role-group">
 				<button
 					class="role-header"
@@ -330,7 +404,10 @@
 
 				{#if !group.collapsed}
 					<div class="role-members" role="list" aria-label="{group.name} members">
-						{#each group.members as member (member.nick)}
+						{#if slice.topPx > 0}
+							<div style="height: {slice.topPx}px;" aria-hidden="true"></div>
+						{/if}
+						{#each group.members.slice(slice.start, slice.end) as member (member.nick)}
 							{@const presence = presenceInfo(member)}
 							{@const color = getMemberColor(member)}
 							<div
@@ -348,6 +425,9 @@
 								<span class="member-nick" style="color: {color}">{member.nick}</span>
 							</div>
 						{/each}
+						{#if slice.bottomPx > 0}
+							<div style="height: {slice.bottomPx}px;" aria-hidden="true"></div>
+						{/if}
 					</div>
 				{/if}
 			</div>
@@ -363,7 +443,8 @@
 		tabindex="-1"
 		style="left: {contextMenu.x}px; top: {contextMenu.y}px;"
 		onclick={(e) => e.stopPropagation()}
-		onkeydown={(e) => { if (e.key === 'Escape') closeContextMenu(); }}
+		onkeydown={(e) => handleMenuKeydown(e, e.currentTarget as HTMLElement, closeContextMenu)}
+		use:focusFirst
 	>
 		<button class="context-item" role="menuitem" onclick={handleSendMessage}>Send Message</button>
 		<button class="context-item" role="menuitem" onclick={handleMention}>Mention</button>

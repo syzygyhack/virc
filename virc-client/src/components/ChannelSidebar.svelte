@@ -21,6 +21,7 @@
 	} from '$lib/state/notifications.svelte';
 	import VoicePanel from './VoicePanel.svelte';
 	import UserPanel from './UserPanel.svelte';
+	import { handleMenuKeydown, focusFirst } from '$lib/utils/a11y';
 	import type { Room } from 'livekit-client';
 
 	interface Props {
@@ -51,18 +52,19 @@
 	}
 
 	/**
-	 * Whether the current user has op (@) or higher in any channel.
-	 * Used to show the create channel '+' button next to category headers.
+	 * Whether the current user has op (@) or higher in any visible channel.
+	 * Checks all categorized channels (not just the active one) so ops
+	 * retain create/reorder affordances even when viewing a DM.
 	 */
 	let isOp = $derived.by(() => {
 		const nick = userState.nick;
 		if (!nick) return false;
-		// Check the active channel first
-		const active = channelUIState.activeChannel;
-		if (active) {
-			const member = getMember(active, nick);
-			if (member?.highestMode && ['~', '&', '@'].includes(member.highestMode)) {
-				return true;
+		for (const cat of channelUIState.categories) {
+			for (const ch of cat.channels) {
+				const member = getMember(ch, nick);
+				if (member?.highestMode && ['~', '&', '@'].includes(member.highestMode)) {
+					return true;
+				}
 			}
 		}
 		return false;
@@ -208,6 +210,18 @@
 		dragOverChannelIndex = null;
 	}
 
+	/** Keyboard alternative for channel reorder: Alt+Arrow moves channel within category. */
+	function handleChannelKeydown(e: KeyboardEvent, categoryName: string, index: number, maxIndex: number): void {
+		if (!isOp || !e.altKey) return;
+		if (e.key === 'ArrowUp' && index > 0) {
+			e.preventDefault();
+			reorderChannels(categoryName, index, index - 1);
+		} else if (e.key === 'ArrowDown' && index < maxIndex) {
+			e.preventDefault();
+			reorderChannels(categoryName, index, index + 1);
+		}
+	}
+
 	/**
 	 * Get voice participants for a channel as an array.
 	 * Only returns LiveKit participants — users actively connected to the
@@ -344,6 +358,7 @@
 								class:is-muted={chMuted}
 								onclick={() => handleChannelClick(ch, !!cat.voice)}
 								oncontextmenu={(e) => handleContextMenu(e, ch)}
+								onkeydown={(e) => handleChannelKeydown(e, cat.name, chIdx, cat.channels.length - 1)}
 							>
 								{#if cat.voice}
 									<svg class="channel-icon voice-icon" width="14" height="14" viewBox="0 0 16 16">
@@ -469,9 +484,11 @@
 			class="context-menu"
 			style="left: {contextMenu.x}px; top: {contextMenu.y}px;"
 			onclick={(e) => e.stopPropagation()}
+			onkeydown={(e) => handleMenuKeydown(e, e.currentTarget as HTMLElement, closeContextMenu)}
 			role="menu"
+			use:focusFirst
 		>
-			<div class="context-menu-header">Notifications</div>
+			<div class="context-menu-header" id="notif-menu-label">Notifications</div>
 			{#each notificationOptions as opt (opt.level)}
 				<button
 					class="context-menu-item"

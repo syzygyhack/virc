@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { getActiveServer } from '$lib/state/servers.svelte';
+	import { useTrapFocus } from '$lib/utils/a11y';
 	import { serverConfig } from '$lib/state/serverConfig.svelte';
 	import { channelUIState } from '$lib/state/channels.svelte';
 	import { getMembers } from '$lib/state/members.svelte';
@@ -231,34 +232,34 @@
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-<div class="settings-overlay" role="dialog" aria-modal="true" aria-label="Server Settings" tabindex="-1" onkeydown={handleKeydown}>
+<div class="settings-overlay" role="dialog" aria-modal="true" aria-label="Server Settings" tabindex="-1" onkeydown={handleKeydown} use:useTrapFocus>
 	<div class="settings-container">
 		<!-- Left: navigation -->
-		<nav class="settings-nav">
+		<nav class="settings-nav" role="tablist" aria-orientation="vertical" aria-label="Server settings tabs">
 			<div class="nav-section">
 				<span class="nav-section-title">{server?.name ?? 'Server'}</span>
-				<button class="nav-item" class:active={activeTab === 'overview'} onclick={() => activeTab = 'overview'}>
+				<button class="nav-item" class:active={activeTab === 'overview'} role="tab" aria-selected={activeTab === 'overview'} aria-controls="ss-tabpanel-overview" onclick={() => activeTab = 'overview'}>
 					Overview
 				</button>
-				<button class="nav-item" class:active={activeTab === 'channels'} onclick={() => activeTab = 'channels'}>
+				<button class="nav-item" class:active={activeTab === 'channels'} role="tab" aria-selected={activeTab === 'channels'} aria-controls="ss-tabpanel-channels" onclick={() => activeTab = 'channels'}>
 					Channels
 				</button>
 			</div>
 			<div class="nav-divider"></div>
 			<div class="nav-section">
-				<button class="nav-item" class:active={activeTab === 'roles'} onclick={() => activeTab = 'roles'}>
+				<button class="nav-item" class:active={activeTab === 'roles'} role="tab" aria-selected={activeTab === 'roles'} aria-controls="ss-tabpanel-roles" onclick={() => activeTab = 'roles'}>
 					Roles
 				</button>
-				<button class="nav-item" class:active={activeTab === 'members'} onclick={() => activeTab = 'members'}>
+				<button class="nav-item" class:active={activeTab === 'members'} role="tab" aria-selected={activeTab === 'members'} aria-controls="ss-tabpanel-members" onclick={() => activeTab = 'members'}>
 					Members
 				</button>
-				<button class="nav-item" class:active={activeTab === 'invites'} onclick={() => activeTab = 'invites'}>
+				<button class="nav-item" class:active={activeTab === 'invites'} role="tab" aria-selected={activeTab === 'invites'} aria-controls="ss-tabpanel-invites" onclick={() => activeTab = 'invites'}>
 					Invites
 				</button>
-				<button class="nav-item" class:active={activeTab === 'appearance'} onclick={() => activeTab = 'appearance'}>
+				<button class="nav-item" class:active={activeTab === 'appearance'} role="tab" aria-selected={activeTab === 'appearance'} aria-controls="ss-tabpanel-appearance" onclick={() => activeTab = 'appearance'}>
 					Appearance
 				</button>
-				<button class="nav-item" class:active={activeTab === 'moderation'} onclick={() => activeTab = 'moderation'}>
+				<button class="nav-item" class:active={activeTab === 'moderation'} role="tab" aria-selected={activeTab === 'moderation'} aria-controls="ss-tabpanel-moderation" onclick={() => activeTab = 'moderation'}>
 					Moderation
 				</button>
 			</div>
@@ -276,7 +277,7 @@
 				</button>
 			</div>
 
-			<div class="content-body">
+			<div class="content-body" role="tabpanel" id="ss-tabpanel-{activeTab}" aria-label="{tabTitle}">
 				{#if activeTab === 'overview'}
 					<div class="overview-card">
 						{#if server?.icon}

@@ -2,6 +2,7 @@
 	import { serverState, setActiveServer, removeServer, reorderServers, type ServerInfo } from '$lib/state/servers.svelte';
 	import { channelUIState } from '$lib/state/channels.svelte';
 	import { notificationState, getUnreadCount, getMentionCount, markAllRead } from '$lib/state/notifications.svelte';
+	import { handleMenuKeydown, focusFirst } from '$lib/utils/a11y';
 
 	interface Props {
 		onserversettings?: () => void;
@@ -154,6 +155,18 @@
 		dragIndex = null;
 		dragOverIndex = null;
 	}
+
+	/** Keyboard alternative for drag reorder: Alt+Arrow moves server up/down. */
+	function handleServerKeydown(e: KeyboardEvent, index: number): void {
+		if (!e.altKey) return;
+		if (e.key === 'ArrowUp' && index > 0) {
+			e.preventDefault();
+			reorderServers(index, index - 1);
+		} else if (e.key === 'ArrowDown' && index < serverState.servers.length - 1) {
+			e.preventDefault();
+			reorderServers(index, index + 1);
+		}
+	}
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -183,8 +196,9 @@
 					class:active={isActive}
 					onclick={() => handleServerClick(server.id)}
 					oncontextmenu={(e) => handleContextMenu(e, server.id)}
+					onkeydown={(e) => handleServerKeydown(e, index)}
 					title={server.name}
-					aria-label={server.name}
+					aria-label="{server.name} (Alt+Arrow to reorder)"
 					aria-current={isActive ? 'true' : undefined}
 				>
 					{#if server.icon}
@@ -229,13 +243,14 @@
 			class="context-menu"
 			style="left: {contextMenu.x}px; top: {contextMenu.y}px;"
 			onclick={(e) => e.stopPropagation()}
-			onkeydown={(e) => { if (e.key === 'Escape') closeContextMenu(); }}
+			onkeydown={(e) => handleMenuKeydown(e, e.currentTarget as HTMLElement, closeContextMenu)}
 			role="menu"
+			use:focusFirst
 		>
 			<button class="context-item" role="menuitem" onclick={handleServerSettings}>Server Settings</button>
 			<button class="context-item" role="menuitem" onclick={handleMarkAsRead}>Mark as Read</button>
 			<button class="context-item" role="menuitem" onclick={handleCopyInviteLink}>Copy Invite Link</button>
-			<div class="context-separator"></div>
+			<div class="context-separator" role="separator"></div>
 			<button class="context-item" role="menuitem" onclick={handleDisconnect}>Disconnect</button>
 			<button class="context-item danger" role="menuitem" onclick={handleRemove}>Remove</button>
 		</div>

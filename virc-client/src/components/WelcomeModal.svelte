@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { useTrapFocus } from '$lib/utils/a11y';
+
 	interface Props {
 		serverName: string;
 		message: string;
@@ -35,6 +37,7 @@
 	aria-labelledby="welcome-title"
 	onclick={handleOverlayClick}
 	onkeydown={handleKeydown}
+	use:useTrapFocus
 >
 	<div class="welcome-dialog">
 		<h2 id="welcome-title" class="welcome-title">Welcome to {serverName}</h2>

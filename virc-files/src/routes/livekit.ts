@@ -31,6 +31,14 @@ livekit.post("/api/livekit/token", authMiddleware, async (c) => {
     return c.json({ error: "Invalid room name" }, 400);
   }
 
+  // NOTE: Channel membership is not verified here because Ergo's HTTP API
+  // does not expose a channel membership endpoint. In IRC, channels are
+  // generally joinable by anyone who knows the name — the IRC server
+  // enforces access control (invite-only, bans, etc.) at JOIN time.
+  // A malicious user could obtain a voice token for a channel they haven't
+  // JOINed, but they would be in an isolated voice room with no IRC context.
+  // If Ergo adds a membership query API in the future, add a check here.
+
   // For DM rooms (format: "dm:account1:account2"), verify the requesting user
   // is one of the two participants to prevent eavesdropping.
   if (room.startsWith("dm:")) {

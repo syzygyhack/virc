@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
+	import { useTrapFocus } from '$lib/utils/a11y';
 	import { userState } from '$lib/state/user.svelte';
 	import { clearToken, clearCredentials } from '$lib/api/auth';
 	import { formatMessage } from '$lib/irc/parser';
@@ -524,37 +525,37 @@
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-<div class="settings-overlay" role="dialog" aria-modal="true" aria-label="User Settings" tabindex="-1" onkeydown={handleKeydown}>
+<div class="settings-overlay" role="dialog" aria-modal="true" aria-label="User Settings" tabindex="-1" onkeydown={handleKeydown} use:useTrapFocus>
 	<div class="settings-container">
 		<!-- Left: navigation -->
-		<nav class="settings-nav">
+		<nav class="settings-nav" role="tablist" aria-orientation="vertical" aria-label="Settings tabs">
 			<div class="nav-section">
 				<span class="nav-section-title">User Settings</span>
-				<button class="nav-item" class:active={activeTab === 'account'} onclick={() => activeTab = 'account'}>
+				<button class="nav-item" class:active={activeTab === 'account'} role="tab" aria-selected={activeTab === 'account'} aria-controls="tabpanel-account" onclick={() => activeTab = 'account'}>
 					Account
 				</button>
 			</div>
 			<div class="nav-section">
 				<span class="nav-section-title">App Settings</span>
-				<button class="nav-item" class:active={activeTab === 'appearance'} onclick={() => activeTab = 'appearance'}>
+				<button class="nav-item" class:active={activeTab === 'appearance'} role="tab" aria-selected={activeTab === 'appearance'} aria-controls="tabpanel-appearance" onclick={() => activeTab = 'appearance'}>
 					Appearance
 				</button>
-				<button class="nav-item" class:active={activeTab === 'voice'} onclick={() => activeTab = 'voice'}>
+				<button class="nav-item" class:active={activeTab === 'voice'} role="tab" aria-selected={activeTab === 'voice'} aria-controls="tabpanel-voice" onclick={() => activeTab = 'voice'}>
 					Voice & Video
 				</button>
-				<button class="nav-item" class:active={activeTab === 'notifications'} onclick={() => activeTab = 'notifications'}>
+				<button class="nav-item" class:active={activeTab === 'notifications'} role="tab" aria-selected={activeTab === 'notifications'} aria-controls="tabpanel-notifications" onclick={() => activeTab = 'notifications'}>
 					Notifications
 				</button>
-				<button class="nav-item" class:active={activeTab === 'keybindings'} onclick={() => activeTab = 'keybindings'}>
+				<button class="nav-item" class:active={activeTab === 'keybindings'} role="tab" aria-selected={activeTab === 'keybindings'} aria-controls="tabpanel-keybindings" onclick={() => activeTab = 'keybindings'}>
 					Keybinds
 				</button>
-				<button class="nav-item" class:active={activeTab === 'advanced'} onclick={() => activeTab = 'advanced'}>
+				<button class="nav-item" class:active={activeTab === 'advanced'} role="tab" aria-selected={activeTab === 'advanced'} aria-controls="tabpanel-advanced" onclick={() => activeTab = 'advanced'}>
 					Advanced
 				</button>
 			</div>
 			<div class="nav-divider"></div>
 			<div class="nav-section">
-				<button class="nav-item" class:active={activeTab === 'about'} onclick={() => activeTab = 'about'}>
+				<button class="nav-item" class:active={activeTab === 'about'} role="tab" aria-selected={activeTab === 'about'} aria-controls="tabpanel-about" onclick={() => activeTab = 'about'}>
 					About
 				</button>
 			</div>
@@ -581,7 +582,7 @@
 				</button>
 			</div>
 
-			<div class="content-body">
+			<div class="content-body" role="tabpanel" id="tabpanel-{activeTab}" aria-label="{tabTitle}">
 				{#if activeTab === 'account'}
 					<div class="account-card">
 						<div class="account-avatar">

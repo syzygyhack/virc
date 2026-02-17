@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { renderMessage, nickColor } from '$lib/irc/format';
+	import { handleMenuKeydown, focusFirst } from '$lib/utils/a11y';
 	import { getMessage, isPinned } from '$lib/state/messages.svelte';
 	import { userState } from '$lib/state/user.svelte';
 	import { appSettings } from '$lib/state/appSettings.svelte';
@@ -346,28 +347,33 @@
 				</button>
 				{#if moreMenuOpen}
 					<!-- svelte-ignore a11y_no_static_element_interactions -->
-					<div class="more-menu">
+					<div
+						class="more-menu"
+						role="menu"
+						onkeydown={(e) => handleMenuKeydown(e, e.currentTarget as HTMLElement, closeMoreMenu)}
+						use:focusFirst
+					>
 						{#if isOwnMessage}
-							<button class="more-menu-item" onclick={handleEdit}>
+							<button class="more-menu-item" role="menuitem" onclick={handleEdit}>
 								Edit Message
 							</button>
 						{/if}
-						<button class="more-menu-item" onclick={handleCopyText}>
+						<button class="more-menu-item" role="menuitem" onclick={handleCopyText}>
 							Copy Text
 						</button>
-						<button class="more-menu-item" onclick={handleCopyLink}>
+						<button class="more-menu-item" role="menuitem" onclick={handleCopyLink}>
 							Copy Link
 						</button>
-						<button class="more-menu-item" onclick={handleMarkUnread}>
+						<button class="more-menu-item" role="menuitem" onclick={handleMarkUnread}>
 							Mark Unread
 						</button>
 						{#if isOp}
-							<button class="more-menu-item" onclick={handlePin}>
+							<button class="more-menu-item" role="menuitem" onclick={handlePin}>
 								{pinned ? 'Unpin Message' : 'Pin Message'}
 							</button>
 						{/if}
 						{#if canDelete}
-							<button class="more-menu-item more-menu-item-danger" onclick={(e) => handleMore(e)}>
+							<button class="more-menu-item more-menu-item-danger" role="menuitem" onclick={(e) => handleMore(e)}>
 								Delete Message
 							</button>
 						{/if}
@@ -390,7 +396,14 @@
 								src={media.url}
 								alt="Image preview"
 								loading="lazy"
-								onload={(e) => (e.currentTarget as HTMLImageElement).dataset.loaded = ''}
+								onload={(e) => {
+									const img = e.currentTarget as HTMLImageElement;
+									img.dataset.loaded = '';
+									const placeholder = img.parentElement;
+									if (placeholder && img.naturalWidth && img.naturalHeight) {
+										placeholder.style.aspectRatio = `${img.naturalWidth} / ${img.naturalHeight}`;
+									}
+								}}
 							/>
 						</div>
 					</button>
@@ -1061,6 +1074,7 @@
 
 	.media-thumbnail-placeholder {
 		max-width: 400px;
+		max-height: 300px;
 		aspect-ratio: 16 / 9;
 		background: var(--surface-high);
 		border-radius: 4px;
@@ -1069,10 +1083,8 @@
 
 	.media-thumbnail {
 		display: block;
-		max-width: 400px;
-		max-height: 300px;
-		width: auto;
-		height: auto;
+		width: 100%;
+		height: 100%;
 		object-fit: contain;
 		border-radius: 4px;
 		background: var(--surface-high);

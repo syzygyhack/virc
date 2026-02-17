@@ -7,6 +7,12 @@
 	import { join, chathistory, markread, tagmsg, redact, privmsg, topic, monitor, who, escapeTagValue } from '$lib/irc/commands';
 	import { getCredentials, getToken, fetchToken, startTokenRefresh, stopTokenRefresh, clearCredentials, clearToken } from '$lib/api/auth';
 	import { connectToVoice, disconnectVoice, toggleMute as toggleMuteRoom, toggleDeafen as toggleDeafenRoom, toggleVideo as toggleVideoRoom, toggleScreenShare as toggleScreenShareRoom } from '$lib/voice/room';
+	import {
+		handleVoiceChannelClick as voiceChannelClick,
+		handleDMVoiceCall as dmVoiceCall,
+		handleDMVideoCall as dmVideoCall,
+	} from '$lib/voice/manager';
+	import { navigateChannel, navigateUnreadChannel, navigateServer } from '$lib/navigation/channelNav';
 	import { voiceState, updateParticipant } from '$lib/state/voice.svelte';
 	import { audioSettings } from '$lib/state/audioSettings.svelte';
 	import type { Room } from 'livekit-client';
@@ -26,15 +32,13 @@
 		setCategories,
 		isDMTarget,
 		openDM,
-		addDMConversation,
 		clearChannelMembers as clearSimpleMembers,
 	} from '$lib/state/channels.svelte';
 	import { markRead } from '$lib/state/notifications.svelte';
-	import { getUnreadCount } from '$lib/state/notifications.svelte';
-	import { getMember, clearChannel as clearRichMembers, memberState } from '$lib/state/members.svelte';
+	import { getMember, clearChannel as clearRichMembers } from '$lib/state/members.svelte';
 	import { getCursors, getMessage, getMessages, redactMessage, addReaction, removeReaction, updateSendState, addMessage, pinMessage, unpinMessage, isPinned } from '$lib/state/messages.svelte';
 	import type { Message } from '$lib/state/messages.svelte';
-	import { addServer, getActiveServer, serverState, setActiveServer } from '$lib/state/servers.svelte';
+	import { addServer, getActiveServer } from '$lib/state/servers.svelte';
 	import { installGlobalHandler, registerKeybindings } from '$lib/keybindings';
 	import ChannelSidebar from '../../components/ChannelSidebar.svelte';
 	import HeaderBar from '../../components/HeaderBar.svelte';
@@ -488,207 +492,36 @@
 		}, 1000);
 	}
 
-	/**
-	* Handle a voice channel click: request mic permission, fetch a
-	* LiveKit token, connect to the room, and JOIN the IRC channel.
-	*/
+	/** Wrapper: voice channel click delegates to extracted manager, manages local state. */
 	async function handleVoiceChannelClick(channel: string): Promise<void> {
-		// If already in this channel, disconnect instead (toggle behavior).
-		if (voiceState.currentRoom === channel && voiceRoom) {
-			await disconnectVoice(voiceRoom);
-			voiceRoom = null;
-			// PART the IRC voice channel for presence.
-			if (conn) {
-				conn.send(`PART ${channel}`);
-			}
-			return;
-		}
-
-		// If connected to a different voice channel, disconnect first.
-		if (voiceRoom) {
-			const prevChannel = voiceState.currentRoom;
-			await disconnectVoice(voiceRoom);
-			voiceRoom = null;
-			if (conn && prevChannel) {
-				conn.send(`PART ${prevChannel}`);
-			}
-		}
-
-		try {
-			// 1. Request microphone permission (stop immediately — LiveKit opens its own stream).
-			const permStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-			for (const track of permStream.getTracks()) track.stop();
-
-			// 2. Fetch LiveKit token from virc-files.
-			const server = getActiveServer();
-			if (!server) throw new Error('No active server');
-			if (!server.filesUrl) throw new Error('Voice requires a files server');
-
-			const jwt = getToken();
-			if (!jwt) throw new Error('Not authenticated');
-
-			const res = await fetch(`${server.filesUrl}/api/livekit/token`, {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-					'Authorization': `Bearer ${jwt}`,
-				},
-				body: JSON.stringify({ channel }),
-			});
-
-			if (!res.ok) {
-				throw new Error(`Failed to get voice token (${res.status})`);
-			}
-
-			const data = (await res.json()) as { token: string; url: string };
-
-			// 3. Connect to the LiveKit room.
-			// connectToVoice respects audioSettings.pushToTalk — mic starts muted in PTT mode.
-			voiceRoom = await connectToVoice(channel, data.url, data.token);
-
-			// 4. JOIN the IRC voice channel for presence.
-			if (conn) {
-				join(conn, [channel]);
-			}
-		} catch (e) {
-			console.error('Voice connection failed:', e);
-			const msg = e instanceof Error ? e.message : String(e);
-			voiceError = `Voice connection failed: ${msg}`;
-			// Auto-clear the error after 5 seconds
+		const result = await voiceChannelClick(channel, conn, voiceRoom);
+		if (result.ok) {
+			// Toggle off returns a null-like room; toggle on returns the new room
+			voiceRoom = voiceState.isConnected ? result.room : null;
+		} else {
+			voiceError = result.error;
 			setTimeout(() => { voiceError = null; }, 5_000);
 		}
 	}
 
-	/**
-	 * Handle a DM voice call: toggle voice connection for a 1:1 call.
-	 * Uses a deterministic room name based on the two accounts (sorted).
-	 */
+	/** Wrapper: DM voice call delegates to extracted manager. */
 	async function handleDMVoiceCall(target: string): Promise<void> {
-		try {
-			const dmRoom = getDMRoomName(target);
-
-			// If already in a DM call with this target, disconnect (toggle)
-			if (voiceState.currentRoom === dmRoom && voiceRoom) {
-				await disconnectVoice(voiceRoom);
-				voiceRoom = null;
-				return;
-			}
-
-			// If in another voice session, disconnect first
-			if (voiceRoom) {
-				const prevChannel = voiceState.currentRoom;
-				await disconnectVoice(voiceRoom);
-				voiceRoom = null;
-				if (conn && prevChannel && prevChannel.startsWith('#')) {
-					conn.send(`PART ${prevChannel}`);
-				}
-			}
-
-			// Request mic permission
-			const permStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-			for (const track of permStream.getTracks()) track.stop();
-
-			const server = getActiveServer();
-			if (!server?.filesUrl) throw new Error('Voice requires a files server');
-
-			const jwt = getToken();
-			if (!jwt) throw new Error('Not authenticated');
-
-			const res = await fetch(`${server.filesUrl}/api/livekit/token`, {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-					'Authorization': `Bearer ${jwt}`,
-				},
-				body: JSON.stringify({ channel: dmRoom }),
-			});
-
-			if (!res.ok) throw new Error(`Failed to get voice token (${res.status})`);
-			const data = (await res.json()) as { token: string; url: string };
-
-			voiceRoom = await connectToVoice(dmRoom, data.url, data.token);
-		} catch (e) {
-			console.error('DM voice call failed:', e);
-			const msg = e instanceof Error ? e.message : String(e);
-			voiceError = `Voice call failed: ${msg}`;
+		const result = await dmVoiceCall(target, conn, voiceRoom);
+		if (result.ok) {
+			voiceRoom = voiceState.isConnected ? result.room : null;
+		} else {
+			voiceError = result.error;
 			setTimeout(() => { voiceError = null; }, 5_000);
 		}
 	}
 
-	/**
-	 * Resolve the account name for a DM target nick.
-	 * Checks DM conversations first, then channel member lists.
-	 */
-	function resolveAccountForNick(target: string): string | null {
-		const lowerTarget = target.toLowerCase();
-
-		for (const dm of channelUIState.dmConversations) {
-			if (dm.nick.toLowerCase() === lowerTarget && dm.account) {
-				return dm.account;
-			}
-		}
-
-		for (const ch of channelState.channels.values()) {
-			for (const member of ch.members.values()) {
-				if (member.nick.toLowerCase() === lowerTarget && member.account) {
-					addDMConversation(target, member.account);
-					return member.account;
-				}
-			}
-		}
-
-		for (const map of memberState.channels.values()) {
-			for (const member of map.values()) {
-				if (member.nick.toLowerCase() === lowerTarget && member.account) {
-					addDMConversation(target, member.account);
-					return member.account;
-				}
-			}
-		}
-
-		return null;
-	}
-
-	/**
-	 * Generate a deterministic room name for a DM voice call.
-	 * Sorts the two account names alphabetically so both participants get the same room.
-	 */
-	function getDMRoomName(target: string): string {
-		const selfAccount = userState.account ?? '';
-		if (!selfAccount) {
-			throw new Error('Not authenticated');
-		}
-
-		const targetAccount = resolveAccountForNick(target);
-		if (!targetAccount) {
-			throw new Error(`Cannot start DM call until ${target}'s account is known`);
-		}
-
-		// Lowercase to match server-side comparison (livekit.ts uses toLowerCase)
-		const accounts = [selfAccount.toLowerCase(), targetAccount.toLowerCase()].sort();
-		return `dm:${accounts[0]}:${accounts[1]}`;
-	}
-
-	/**
-	 * Handle a DM video call: start voice + enable camera.
-	 * If already in a call, just toggle the camera.
-	 */
+	/** Wrapper: DM video call delegates to extracted manager. */
 	async function handleDMVideoCall(target: string): Promise<void> {
-		try {
-			const dmRoom = getDMRoomName(target);
-			// If already in the call, just toggle camera
-			if (voiceState.currentRoom === dmRoom && voiceRoom) {
-				await toggleVideoRoom(voiceRoom);
-				return;
-			}
-			// Not in a call yet — start voice call first, then enable camera
-			await handleDMVoiceCall(target);
-			if (voiceRoom) {
-				await toggleVideoRoom(voiceRoom);
-			}
-		} catch (e) {
-			const msg = e instanceof Error ? e.message : String(e);
-			voiceError = `Video call failed: ${msg}`;
+		const result = await dmVideoCall(target, conn, voiceRoom);
+		if (result.ok) {
+			voiceRoom = voiceState.isConnected ? result.room : null;
+		} else {
+			voiceError = result.error;
 			setTimeout(() => { voiceError = null; }, 5_000);
 		}
 	}
@@ -988,76 +821,6 @@
 		} finally {
 			_reconnecting = false;
 		}
-	}
-
-	// ---------------------------------------------------------------------------
-	// Channel navigation helpers
-	// ---------------------------------------------------------------------------
-
-	/**
-	* Get the flat, ordered list of text channels (non-voice) from categories.
-	* Used for Alt+Up/Down navigation.
-	*/
-	function getTextChannelList(): string[] {
-		const channels: string[] = [];
-		for (const dm of channelUIState.dmConversations) {
-			channels.push(dm.nick);
-		}
-		for (const cat of channelUIState.categories) {
-			if (cat.voice) continue;
-			for (const ch of cat.channels) {
-				channels.push(ch);
-			}
-		}
-		return channels;
-	}
-
-	/** Navigate to the next or previous channel in the sidebar. */
-	function navigateChannel(direction: 1 | -1): void {
-		const channels = getTextChannelList();
-		if (channels.length === 0) return;
-		const current = channelUIState.activeChannel;
-		const idx = current ? channels.indexOf(current) : -1;
-		let next: number;
-		if (idx === -1) {
-			next = direction === 1 ? 0 : channels.length - 1;
-		} else {
-			next = (idx + direction + channels.length) % channels.length;
-		}
-		setActiveChannel(channels[next]);
-	}
-
-	/** Navigate to the next or previous unread channel. */
-	function navigateUnreadChannel(direction: 1 | -1): void {
-		const channels = getTextChannelList();
-		if (channels.length === 0) return;
-		const current = channelUIState.activeChannel;
-		const idx = current ? channels.indexOf(current) : -1;
-		const start = idx === -1 ? 0 : idx;
-
-		// Search in the given direction for an unread channel
-		for (let i = 1; i <= channels.length; i++) {
-			const checkIdx = (start + i * direction + channels.length) % channels.length;
-			if (getUnreadCount(channels[checkIdx]) > 0) {
-				setActiveChannel(channels[checkIdx]);
-				return;
-			}
-		}
-	}
-
-	/** Navigate to the next or previous server in the server list. */
-	function navigateServer(direction: 1 | -1): void {
-		const servers = serverState.servers;
-		if (servers.length === 0) return;
-		const activeId = serverState.activeServerId;
-		const idx = activeId ? servers.findIndex((s) => s.id === activeId) : -1;
-		let next: number;
-		if (idx === -1) {
-			next = direction === 1 ? 0 : servers.length - 1;
-		} else {
-			next = (idx + direction + servers.length) % servers.length;
-		}
-		setActiveServer(servers[next].id);
 	}
 
 	/** Mark the active channel as read and sync via MARKREAD. */

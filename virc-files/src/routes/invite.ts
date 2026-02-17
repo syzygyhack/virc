@@ -290,6 +290,9 @@ export function createInviteRouter(dataDir?: string) {
       return c.json({ error: "Invite has reached maximum uses" }, 410);
     }
 
+    // Safe in single-threaded JS: the check above and the increment below
+    // execute synchronously with no await between them, so concurrent
+    // requests cannot interleave between the guard and the mutation.
     invite.useCount++;
     await store.save();
 

@@ -71,28 +71,28 @@ Full project rename. ~200 locations across source, config, tests, and docs.
 
 ### Docker & infrastructure
 - [ ] `docker-compose.yml` — service name `virc-files`, volume names `virc-uploads`/`virc-data`, build path, Caddy mount
-- [ ] `config/caddy/Caddyfile` — `reverse_proxy virc-files:8080`, `root * /srv/virc`
-- [ ] `virc-files/Dockerfile` — user/group name `virc`
-- [ ] `config/ergo/ircd.yaml` — server `name: virc`, network `name: virc.local`, comments
+- [ ] `config/caddy/Caddyfile` — `reverse_proxy virc-files:8080`, `root * /srv/accord`
+- [ ] `virc-files/Dockerfile` — user/group name -> `accord`
+- [ ] `config/ergo/ircd.yaml` — server `name: accord`, network `name: accord.local`, comments
 
 ### Environment
-- [ ] `.env.example` — all comments referencing virc/virc-files
+- [ ] `.env.example` — all comments referencing virc/accord-files
 
 ### Default strings
-- [ ] `"virc Server"` default server name (config.ts:64)
-- [ ] `"A virc community server"` default description (config.ts:72)
-- [ ] `"virc-link-preview/1.0"` User-Agent (preview.ts:336)
-- [ ] Console log `virc-files listening on` (index.ts:61)
-- [ ] Console error `[virc] InviteStore save failed` (invite.ts:46)
+- [ ] `"virc Server"` -> `"accord Server"` default server name (config.ts:64)
+- [ ] `"A virc community server"` -> `"An accord community server"` default description (config.ts:72)
+- [ ] `"virc-link-preview/1.0"` -> `"accord-link-preview/1.0"` User-Agent (preview.ts:336)
+- [ ] Console log `virc-files listening on` -> `accord-files listening on` (index.ts:61)
+- [ ] Console error `[virc] InviteStore save failed` -> `[accord]` (invite.ts:46)
 
 ### Documentation
-- [ ] `README.md` — title, all prose, architecture diagram, project structure, repo URL
-- [ ] `PLAN.md` — title (`virc — Video IRC`), all references
-- [ ] `FRONTEND.md` — title, all references
-- [ ] `TODO.md` — this file (already renamed)
+- [x] `README.md` — title, all prose, architecture diagram, project structure, repo URL
+- [x] `PLAN.md` — title (`accord — Video IRC`), all references
+- [x] `FRONTEND.md` — title, all references
+- [x] `TODO.md` — this file (already renamed)
 - [ ] `virc-client/src/app.css` — header comment
 - [ ] `virc-client/src/lib/constants.ts` — JSDoc comments
-- [ ] Update README repo URL (`syzygyhack/virc` -> new repo name)
+- [x] Update README repo URL (`syzygyhack/accord`)
 
 ---
 

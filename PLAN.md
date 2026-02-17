@@ -1,4 +1,4 @@
-# virc — Video IRC
+# accord — Video IRC
 
 A modern, Discord-competitive chat platform built on IRC. Minimal moving parts, maximal feature set.
 
@@ -14,7 +14,7 @@ Replace centralized platforms (Discord, Slack) with a self-hostable, federable s
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                     virc Client (Svelte 5 / SvelteKit)         │
+│                     accord Client (Svelte 5 / SvelteKit)       │
 │                                                                 │
 │  ┌───────────────────┐  ┌──────────────┐  ┌──────────────────┐ │
 │  │  IRC Protocol      │  │  LiveKit SDK  │  │  File Upload     │ │
@@ -25,7 +25,7 @@ Replace centralized platforms (Discord, Slack) with a self-hostable, federable s
             │ WSS (IRC)           │ WSS+WebRTC       │ HTTPS
             │                     │                  │
 ┌───────────▼──────────┐  ┌──────▼────────┐  ┌──────▼──────────┐
-│   Ergo IRC Server    │  │  LiveKit SFU   │  │  virc-files     │
+│   Ergo IRC Server    │  │  LiveKit SFU   │  │  accord-files     │
 │                      │  │                │  │  (HTTP upload    │
 │  - Accounts (SASL)   │  │  - Voice rooms │  │   + storage)    │
 │  - Channels          │  │  - Video       │  │                 │
@@ -45,17 +45,17 @@ Replace centralized platforms (Discord, Slack) with a self-hostable, federable s
 |---------|---------|--------|----------|
 | **Ergo** | IRC server (text, auth, channels, history, presence) | Single Go binary | Yes |
 | **LiveKit** | Voice/video SFU with built-in TURN + signaling | Single Go binary | Only for voice/video |
-| **virc-files** | File uploads, auth bridge, server config, push relay | Custom (small) | Yes |
+| **accord-files** | File uploads, auth bridge, server config, push relay | Custom (small) | Yes |
 | **Caddy** | Reverse proxy, auto-TLS, static file serving | Single Go binary | Production only |
 | **MySQL/MariaDB** | Persistent message history + push notification source | Standard | Required for push; recommended otherwise |
 
-Minimum viable deployment: **Ergo + virc-files** (2 processes). Full deployment: 5 processes. This is honest — "3 services" undercounted it. But every piece is a single binary or standard Docker image, no custom orchestration needed.
+Minimum viable deployment: **Ergo + accord-files** (2 processes). Full deployment: 5 processes. This is honest — "3 services" undercounted it. But every piece is a single binary or standard Docker image, no custom orchestration needed.
 
-The **virc-files** service handles:
+The **accord-files** service handles:
 1. **Auth bridge** — validates IRC credentials via Ergo HTTP API, issues short-lived JWTs for HTTP services (uploads, LiveKit, push)
 2. **File uploads** — accept file, store to disk/S3/R2, return URL
-3. **LiveKit token generation** — given a valid virc-files JWT, issue a LiveKit room token
-4. **Server config endpoint** — serves `/.well-known/virc.json` (branding, roles, emoji, theme)
+3. **LiveKit token generation** — given a valid accord-files JWT, issue a LiveKit room token
+4. **Server config endpoint** — serves `/.well-known/accord.json` (branding, roles, emoji, theme)
 5. **Push relay** — polls Ergo's MySQL history table for new messages, sends Web Push notifications to idle devices
 6. **URL metadata** — Open Graph scraping for link previews (optional)
 
@@ -100,18 +100,18 @@ Ergo + IRCv3 give us these out of the box — no custom protocol work needed:
 
 | Feature | Approach | See Section |
 |---------|----------|-------------|
-| **Auth Bridge** | Client authenticates via virc-files (`POST /api/auth`), which validates against Ergo's HTTP API and issues a short-lived JWT. All HTTP endpoints require this token. | Auth Bridge |
-| **Message Editing** | `REDACT` original + new PRIVMSG with `+virc/edit=<original-msgid>` tag. Client maintains msgid mapping so replies/reactions track correctly. Non-virc clients see delete + new message. | Message Editing Semantics |
-| **File Uploads** | Authenticated upload to virc-files → stored in S3/R2/local → URL posted as message. Client renders inline previews. | Auth Bridge (endpoints) |
-| **Voice/Video** | LiveKit SFU for all calls (group and 1-on-1). virc-files issues LiveKit JWTs. Voice channels identified via `/.well-known/virc.json` config. | Voice/Video Architecture |
-| **Server Config** | `/.well-known/virc.json` endpoint on virc-files. Single canonical source for branding, roles, emoji, categories, theme. Cached by client. | Server Config Discovery |
+| **Auth Bridge** | Client authenticates via accord-files (`POST /api/auth`), which validates against Ergo's HTTP API and issues a short-lived JWT. All HTTP endpoints require this token. | Auth Bridge |
+| **Message Editing** | `REDACT` original + new PRIVMSG with `+accord/edit=<original-msgid>` tag. Client maintains msgid mapping so replies/reactions track correctly. Non-accord clients see delete + new message. | Message Editing Semantics |
+| **File Uploads** | Authenticated upload to accord-files → stored in S3/R2/local → URL posted as message. Client renders inline previews. | Auth Bridge (endpoints) |
+| **Voice/Video** | LiveKit SFU for all calls (group and 1-on-1). accord-files issues LiveKit JWTs. Voice channels identified via `/.well-known/accord.json` config. | Voice/Video Architecture |
+| **Server Config** | `/.well-known/accord.json` endpoint on accord-files. Single canonical source for branding, roles, emoji, categories, theme. Cached by client. | Server Config Discovery |
 | **Threads** | `+draft/reply` is flat (one level). Client groups all replies to same parent into a thread view. Deeper nesting is UI-only. | — |
-| **Rich Previews** | virc-files endpoint (`GET /api/preview?url=...`) fetches Open Graph metadata. Client-side fallback for simple URL detection. | — |
-| **Custom Emoji** | Served from `/.well-known/virc.json` emoji map. Assets hosted by virc-files. Client renders in emoji picker and message display. | Server Config Discovery |
+| **Rich Previews** | accord-files endpoint (`GET /api/preview?url=...`) fetches Open Graph metadata. Client-side fallback for simple URL detection. | — |
+| **Custom Emoji** | Served from `/.well-known/accord.json` emoji map. Assets hosted by accord-files. Client renders in emoji picker and message display. | Server Config Discovery |
 | **User Profiles/Avatars** | Use `draft/metadata-2` for key-value storage on accounts (avatar URL, bio, status). Fall back to Ergo account info via HTTP API. | — |
-| **Search** | Index from MySQL history table, or build a lightweight search endpoint in virc-files. | — |
+| **Search** | Index from MySQL history table, or build a lightweight search endpoint in accord-files. | — |
 | **Push Notifications** | MySQL history polling + device heartbeat idle detection. Push only when ALL devices idle. v1: DMs only. v2: channel @mentions. | Push Notification Pipeline |
-| **Invite Links** | virc-files manages invite tokens. URL format: `https://virc.app/join/<server>/<token>`. Auto-join target channel on accept. | Invite Link System |
+| **Invite Links** | accord-files manages invite tokens. URL format: `https://accord.app/join/<server>/<token>`. Auto-join target channel on accept. | Invite Link System |
 
 ---
 
@@ -123,7 +123,7 @@ The core trust problem: a browser has an IRC WebSocket connection (authenticated
 
 ```
 ┌─────────────┐         ┌─────────────┐         ┌─────────────┐
-│  virc Client │         │ virc-files   │         │  Ergo API   │
+│  accord Client │       │ accord-files   │         │  Ergo API   │
 │  (browser)   │         │ (HTTP)       │         │  (port 8089)│
 └──────┬──────┘         └──────┬──────┘         └──────┬──────┘
        │                       │                       │
@@ -153,25 +153,25 @@ The core trust problem: a browser has an IRC WebSocket connection (authenticated
 JWT payload:
 {
   "sub": "accountname",          // Ergo account name
-  "iss": "virc-files",           // Issuer
+  "iss": "accord-files",           // Issuer
   "iat": 1706000000,             // Issued at
   "exp": 1706003600,             // Expires: 1 hour
-  "srv": "virc.example.com"      // Ergo server this token is valid for
+  "srv": "accord.example.com"      // Ergo server this token is valid for
 }
 
-Signed with: HMAC-SHA256 (shared secret between virc-files instances)
+Signed with: HMAC-SHA256 (shared secret between accord-files instances)
 ```
 
 ### Token Lifecycle
 
-1. **Minting**: Client sends account + password to `POST /api/auth`. virc-files validates against Ergo's `/v1/check_auth`. If valid, returns a JWT.
-2. **Usage**: Client includes `Authorization: Bearer <token>` on all HTTP requests to virc-files (uploads, LiveKit tokens, push registration, config).
+1. **Minting**: Client sends account + password to `POST /api/auth`. accord-files validates against Ergo's `/v1/check_auth`. If valid, returns a JWT.
+2. **Usage**: Client includes `Authorization: Bearer <token>` on all HTTP requests to accord-files (uploads, LiveKit tokens, push registration, config).
 3. **Renewal**: Client refreshes the token before expiry by re-authenticating. The IRC connection's SASL credentials are already stored in client memory.
 4. **Revocation**: Tokens are short-lived (1 hour). No revocation list needed. If an account is disabled in Ergo, the next auth attempt fails.
 
 ### Why Not EXTJWT?
 
-Ergo supports EXTJWT (server-issued JWTs for external services). We could use this instead — the client requests a JWT from Ergo via the IRC connection, then presents it to virc-files. This is cleaner but adds complexity to the IRC protocol layer. Decision: **start with password-based auth bridge (simpler), migrate to EXTJWT later if needed.** Both paths are viable.
+Ergo supports EXTJWT (server-issued JWTs for external services). We could use this instead — the client requests a JWT from Ergo via the IRC connection, then presents it to accord-files. This is cleaner but adds complexity to the IRC protocol layer. Decision: **start with password-based auth bridge (simpler), migrate to EXTJWT later if needed.** Both paths are viable.
 
 ### Endpoints Protected by Auth
 
@@ -182,7 +182,7 @@ Ergo supports EXTJWT (server-issued JWTs for external services). We could use th
 | `POST /api/livekit/token` | Get LiveKit room JWT | Yes |
 | `POST /api/push/subscribe` | Register push subscription | Yes |
 | `POST /api/push/unsubscribe` | Remove push subscription | Yes |
-| `GET /.well-known/virc.json` | Server config (branding, theme, emoji) | No (public) |
+| `GET /.well-known/accord.json` | Server config (branding, theme, emoji) | No (public) |
 | `GET /api/preview?url=...` | URL metadata for link previews | Yes (rate-limited) |
 
 ---
@@ -194,7 +194,7 @@ All server-owner customization is served from a single discoverable endpoint. Th
 ### Endpoint
 
 ```
-GET https://virc.example.com/.well-known/virc.json
+GET https://accord.example.com/.well-known/accord.json
 ```
 
 No authentication required. Cached by client with `ETag` / `If-None-Match` for efficient updates.
@@ -203,7 +203,7 @@ No authentication required. Cached by client with `ETag` / `If-None-Match` for e
 
 ```json
 {
-  "$schema": "https://virc.app/schema/server-config-v1.json",
+  "$schema": "https://accord.app/schema/server-config-v1.json",
   "version": 1,
   "name": "My Community",
   "icon": "/api/files/server-icon.png",
@@ -272,15 +272,15 @@ This is critical — the client must never pretend to enforce something IRC does
 | `roles.*.name` | **Client only (decorative)** | Friendly names for IRC mode prefixes. IRC enforces the actual modes. |
 | `roles.*.color` | **Client only (decorative)** | Visual only. Other IRC clients won't see role colors. |
 | `channels.categories` | **Client only (decorative)** | IRC has no concept of categories. Client groups channels visually. |
-| `channels.*.voice` | **Client convention** | virc clients treat these as voice channels. IRC sees them as normal channels. |
+| `channels.*.voice` | **Client convention** | accord clients treat these as voice channels. IRC sees them as normal channels. |
 | `channels.*.readonly` | **IRC enforced** | Maps to channel mode `+m` (moderated). Ergo enforces this. |
 | `theme` | **Client only** | CSS overrides. No server enforcement. |
 | `emoji` | **Client only** | Custom rendering. Other IRC clients see `:catjam:` as text. |
-| `welcome` | **Client only** | Shown by virc client on first join. |
+| `welcome` | **Client only** | Shown by accord client on first join. |
 | Kick / Ban / Mute | **IRC enforced** | These map to real IRC commands. Ergo enforces them. |
 | Channel topic | **IRC enforced** | `/TOPIC` is a real IRC command. |
 | Slow mode | **IRC enforced** | Maps to Ergo's per-channel rate limiting. |
-| File size limits | **virc-files enforced** | HTTP service rejects oversized uploads. |
+| File size limits | **accord-files enforced** | HTTP service rejects oversized uploads. |
 
 **Rule**: If the UI shows a setting toggle, it must be clear whether it's enforced (server rejects violations) or decorative (client-side cosmetic). The settings UI labels decorative options as "Display" and enforced options as "Permission".
 
@@ -298,7 +298,7 @@ The push relay **polls Ergo's MySQL history table** for new messages. This is th
 
 ```
 ┌──────────────┐     ┌─────────────────┐     ┌──────────────┐
-│  virc Client  │     │  virc-files      │     │  Ergo MySQL  │
+│  accord Client │    │  accord-files      │     │  Ergo MySQL  │
 │  (browser)    │     │  (push relay)    │     │  (history DB)│
 └──────┬───────┘     └──────┬──────────┘     └──────┬───────┘
        │                    │                        │
@@ -368,7 +368,7 @@ push_cursor table:
 
 ### Poll Loop
 
-virc-files runs a background goroutine that:
+accord-files runs a background goroutine that:
 1. Every 5 seconds: `SELECT * FROM history WHERE msgid > last_msgid ORDER BY msgid LIMIT 100`
 2. For each message: check if target account has push subscriptions AND all devices are idle
 3. If yes: send Web Push notification
@@ -404,15 +404,15 @@ No IRCv3 spec for editing exists. Our REDACT + resend approach creates a new `ms
 
 2. User edits the message. Client sends:
    a. REDACT #general ORIG123              ← tombstone the original
-   b. @+virc/edit=ORIG123 PRIVMSG #general :Hello world  ← new message with edit tag
+   b. @+accord/edit=ORIG123 PRIVMSG #general :Hello world  ← new message with edit tag
 
 3. Server assigns new msgid:
-   S: @msgid=EDIT456;+virc/edit=ORIG123 :alice!u@h PRIVMSG #general :Hello world
+   S: @msgid=EDIT456;+accord/edit=ORIG123 :alice!u@h PRIVMSG #general :Hello world
 ```
 
 ### Client Behavior
 
-- When receiving a message with `+virc/edit=<original-msgid>`:
+- When receiving a message with `+accord/edit=<original-msgid>`:
   1. Find the original message in the buffer by `ORIG123`
   2. Replace its content with the new text
   3. Keep its original position in the message list
@@ -421,10 +421,10 @@ No IRCv3 spec for editing exists. Our REDACT + resend approach creates a new `ms
 - Replies, reactions, and read markers that reference `ORIG123` continue to work because the client maintains the mapping
 - If a reply points to a redacted `msgid` that has no edit mapping, show "[original message deleted]"
 
-### Non-virc Clients
+### Non-accord Clients
 
 - Standard IRC clients will see: the original message disappear (REDACT) and a new message appear at the bottom. This is acceptable — they don't support editing anyway.
-- The `+virc/edit` tag is a client-only tag (prefixed with `+`), so it's safe to send through any IRC server. Servers that don't understand it will ignore and relay it.
+- The `+accord/edit` tag is a client-only tag (prefixed with `+`), so it's safe to send through any IRC server. Servers that don't understand it will ignore and relay it.
 
 ### Edit Limitations
 
@@ -436,12 +436,12 @@ No IRCv3 spec for editing exists. Our REDACT + resend approach creates a new `ms
 
 ## Invite Link System
 
-IRC has no native invite links. We build this in virc-files.
+IRC has no native invite links. We build this in accord-files.
 
 ### URL Format
 
 ```
-https://virc.app/join/chat.mycommunity.com/abc123def
+https://accord.app/join/chat.mycommunity.com/abc123def
                         │                    │
                         server hostname      invite token
 ```
@@ -449,7 +449,7 @@ https://virc.app/join/chat.mycommunity.com/abc123def
 ### Flow
 
 1. **Server admin creates invite** via settings UI or `/invite create #channel`
-2. virc-files generates a random token, stores it:
+2. accord-files generates a random token, stores it:
    ```
    invites table:
      token       TEXT     -- random 12-char alphanumeric
@@ -460,16 +460,16 @@ https://virc.app/join/chat.mycommunity.com/abc123def
      max_uses    INTEGER  -- 0 = unlimited
      use_count   INTEGER  -- current uses
    ```
-3. **User clicks invite link** → virc.app (or desktop client) opens
+3. **User clicks invite link** → accord.app (or desktop client) opens
 4. Client extracts server hostname + token from URL
 5. Client connects to the Ergo server via WebSocket
 6. If user has no account → registration flow
-7. Client calls `GET /api/invite/abc123def` on virc-files → gets `{channel: "#general", server: "chat.mycommunity.com"}`
+7. Client calls `GET /api/invite/abc123def` on accord-files → gets `{channel: "#general", server: "chat.mycommunity.com"}`
 8. Client auto-joins the channel
 
 ### Invite Validation
 
-- virc-files checks: token exists, not expired, use_count < max_uses
+- accord-files checks: token exists, not expired, use_count < max_uses
 - If valid: increment use_count, return channel info
 - If invalid: return error (expired, max uses reached, not found)
 
@@ -479,9 +479,9 @@ https://virc.app/join/chat.mycommunity.com/abc123def
 
 ### How It Works
 
-1. **Voice channels** are regular IRC channels listed in the `voice` category of `/.well-known/virc.json`. This is the sole source of truth — no channel modes, topic prefixes, or naming conventions are used for detection.
-2. When a user joins a voice channel in the virc client:
-   - The client requests a **LiveKit JWT token** from virc-files (authenticated via IRC session)
+1. **Voice channels** are regular IRC channels listed in the `voice` category of `/.well-known/accord.json`. This is the sole source of truth — no channel modes, topic prefixes, or naming conventions are used for detection.
+2. When a user joins a voice channel in the accord client:
+   - The client requests a **LiveKit JWT token** from accord-files (authenticated via IRC session)
    - The token grants access to a LiveKit room matching the channel name
    - The client connects via `livekit-client` SDK and enables microphone
 3. IRC handles presence (who's in the channel). LiveKit handles media (audio/video streams).
@@ -503,7 +503,7 @@ Audio is cheap (~3 kbps/user). A 10-person voice channel = ~270 kbps total outbo
 ## Client Architecture
 
 ```
-virc-client/
+accord-client/
 ├── src/
 │   ├── lib/
 │   │   ├── irc/
@@ -559,7 +559,7 @@ virc-client/
 - Detect URLs → render inline previews (images, videos, links)
 - Detect `+draft/reply` → render as reply with quoted parent
 - Detect `+draft/react` → aggregate into reaction badges under message
-- Detect virc file URLs → render as embedded media
+- Detect accord file URLs → render as embedded media
 - Convert markdown-like input syntax to mIRC formatting codes on send (see FRONTEND.md: Formatting Strategy)
 
 **Virtual scrolling:**
@@ -587,14 +587,14 @@ virc-client/
 - [ ] Reactions (+draft/react — emoji picker, reaction badges)
 - [ ] Typing indicators (+typing — "user is typing..." below input)
 - [ ] Message deletion (REDACT — with confirmation dialog)
-- [ ] Message editing (REDACT + resend with +virc/edit tag)
+- [ ] Message editing (REDACT + resend with +accord/edit tag)
 - [ ] mIRC formatting rendering (bold, italic, color, monospace)
 - [ ] User list with roles (render channel mode prefixes as named roles)
 - [ ] Channel topic display and editing
 - [ ] **Milestone: Chat feature parity with Discord text channels**
 
 ### Phase 2 — Media & Files (Weeks 6-7)
-- [ ] Build virc-files service (file upload endpoint + storage)
+- [ ] Build accord-files service (file upload endpoint + storage)
 - [ ] Drag-and-drop file upload in message input
 - [ ] Image/video inline preview rendering
 - [ ] URL unfurling (Open Graph previews for links)
@@ -604,8 +604,8 @@ virc-client/
 
 ### Phase 3 — Voice & Video (Weeks 8-10)
 - [ ] Deploy LiveKit alongside Ergo
-- [ ] Build token bridge in virc-files (IRC session → LiveKit JWT)
-- [ ] Voice channel detection (from `/.well-known/virc.json` voice category)
+- [ ] Build token bridge in accord-files (IRC session → LiveKit JWT)
+- [ ] Voice channel detection (from `/.well-known/accord.json` voice category)
 - [ ] Join/leave voice channel UI
 - [ ] Mute/deafen/volume controls
 - [ ] Voice activity indicators (who's speaking)
@@ -619,7 +619,7 @@ virc-client/
 - [ ] PWA support (manifest.json, offline shell, installable)
 - [ ] Tauri desktop wrapper (Windows, macOS, Linux)
 - [ ] Server/community management UI (channel creation, permissions, bans)
-- [ ] Invite links (`https://virc.app/join/<server>/<token>` — see Invite Link System)
+- [ ] Invite links (`https://accord.app/join/<server>/<token>` — see Invite Link System)
 - [ ] User profiles (avatar, bio, status via draft/metadata-2)
 - [ ] Custom emoji system (server-defined emoji name→URL map)
 - [ ] Search (full-text over message history)
@@ -629,7 +629,7 @@ virc-client/
 
 ### Phase 5 — Scale & Ecosystem (Ongoing)
 - [ ] Tauri mobile (iOS, Android via Tauri 2.0)
-- [ ] Bot framework (IRC bots with virc-aware conventions)
+- [ ] Bot framework (IRC bots with accord-aware conventions)
 - [ ] Webhook integrations (GitHub, CI, monitoring → IRC channel)
 - [ ] E2EE for DMs (key exchange over DM, encrypt message bodies)
 - [ ] Federation considerations (if Ergo adds clustering)
@@ -649,8 +649,8 @@ virc-client/
 # 2. LiveKit
 livekit-server --dev
 
-# 3. virc-files
-./virc-files --config files.yaml
+# 3. accord-files
+./accord-files --config files.yaml
 
 # 4. Client
 npm run dev
@@ -680,8 +680,8 @@ services:
       - ./livekit/config.yaml:/etc/livekit.yaml
     command: --config /etc/livekit.yaml
 
-  virc-files:
-    build: ./virc-files
+  accord-files:
+    build: ./accord-files
     ports:
       - "8080:8080"
     environment:
@@ -705,7 +705,7 @@ services:
       - "443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile
-      - ./virc-client/build:/srv/virc  # Built client static files
+      - ./accord-client/build:/srv/accord  # Built client static files
 
 volumes:
   ergo-data:
@@ -715,9 +715,9 @@ volumes:
 ### Caddyfile
 
 ```
-virc.example.com {
+accord.example.com {
     # Server config discovery (must be before file_server)
-    reverse_proxy /.well-known/virc.json virc-files:8080
+    reverse_proxy /.well-known/accord.json accord-files:8080
 
     # IRC WebSocket
     reverse_proxy /irc/* ergo:8097
@@ -726,10 +726,10 @@ virc.example.com {
     reverse_proxy /livekit/* livekit:7880
 
     # File uploads, auth bridge, invites, push, previews
-    reverse_proxy /api/* virc-files:8080
+    reverse_proxy /api/* accord-files:8080
 
     # Static client files (fallback)
-    root * /srv/virc
+    root * /srv/accord
     file_server
 }
 ```
@@ -740,7 +740,7 @@ virc.example.com {
 
 ```yaml
 server:
-    name: virc.example.com
+    name: accord.example.com
     listeners:
         ":6697":
             tls:
@@ -790,9 +790,9 @@ api:
 
 ---
 
-## Competitive Analysis: What virc Gets You vs Discord
+## Competitive Analysis: What accord Gets You vs Discord
 
-| Feature | Discord | virc |
+| Feature | Discord | accord |
 |---------|---------|------|
 | Text chat | Yes | Yes (IRC) |
 | Message history | Yes (limited on free) | Yes (unlimited, self-hosted) |
@@ -801,7 +801,7 @@ api:
 | Typing indicators | Yes | Yes (IRCv3) |
 | Read receipts | Yes | Yes (IRCv3) |
 | Message edit/delete | Yes | Yes (custom + IRCv3) |
-| File uploads | Yes | Yes (virc-files) |
+| File uploads | Yes | Yes (accord-files) |
 | Voice channels | Yes | Yes (LiveKit) |
 | Video | Yes | Yes (LiveKit) |
 | Screen share | Yes | Yes (WebRTC native) |
@@ -842,7 +842,7 @@ For 95% of communities (gaming servers, open source projects, companies), single
 | Browser WebSocket can disconnect | Lost messages | Ergo's always-on mode + CHATHISTORY on reconnect = seamless recovery. |
 | Message editing breaks msgid chains | Replies/reactions to edited messages orphaned | Tombstone + edit pointer pattern. Client maintains original→edited msgid mapping. See Message Editing Semantics. |
 | Roles/permissions mismatch with IRC | UI suggests fine-grained perms IRC can't enforce | Clearly separate decorative (display names, colors) from enforced (IRC modes). See Server Config Discovery. |
-| virc-specific features invisible to other IRC clients | Non-virc clients see raw tags, no embeds, no categories | Acceptable. Core chat works everywhere. virc features degrade to plain text gracefully. |
+| accord-specific features invisible to other IRC clients | Non-accord clients see raw tags, no embeds, no categories | Acceptable. Core chat works everywhere. accord features degrade to plain text gracefully. |
 | Push for channel @mentions requires message content parsing | Must scan message text for @patterns | Start with DM push only (v1). Channel @mention push deferred to v2 (requires parsing history rows). |
 
 ---
@@ -851,19 +851,19 @@ For 95% of communities (gaming servers, open source projects, companies), single
 
 1. **Search implementation**: Index MySQL directly, or use a search engine (MeiliSearch/Typesense) for better full-text search?
 2. **Mobile strategy**: Start with PWA and add Tauri 2.0 native later? Or skip PWA and go Tauri 2.0 from the start since it supports mobile?
-3. **Monorepo structure**: Turborepo? pnpm workspaces? What houses Ergo config, LiveKit config, virc-files, and the client?
+3. **Monorepo structure**: Turborepo? pnpm workspaces? What houses Ergo config, LiveKit config, accord-files, and the client?
 4. **EXTJWT migration**: When (if ever) to switch from password-based auth bridge to Ergo's EXTJWT for cleaner token flow?
 5. **Channel mention push (v2)**: Parse message content from MySQL history rows for `@accountname` patterns. Regex-based or tokenized? How to handle @here/@everyone?
 
 ### Resolved (from review)
 
-- **Auth flow**: Password-based auth bridge through virc-files → Ergo HTTP API. See Auth Bridge section.
-- **Channel metadata for voice channels**: Defined in `/.well-known/virc.json` categories config. See Server Config Discovery.
-- **Custom emoji storage**: Served from `/.well-known/virc.json`, assets hosted by virc-files. See Server Config Discovery.
+- **Auth flow**: Password-based auth bridge through accord-files → Ergo HTTP API. See Auth Bridge section.
+- **Channel metadata for voice channels**: Defined in `/.well-known/accord.json` categories config. See Server Config Discovery.
+- **Custom emoji storage**: Served from `/.well-known/accord.json`, assets hosted by accord-files. See Server Config Discovery.
 - **P2P calls via IRC signaling**: Not viable (SDP payloads too large for TAGMSG). All calls route through LiveKit.
 - **Push notification model**: Device heartbeat + idle detection. See Push Notification Pipeline.
 - **Decorative vs enforced permissions**: Documented per-property. See Server Config Discovery table.
 - **Push event source**: MySQL history polling (not IRC bot — MONITOR can't observe messages). See Push Notification Pipeline.
-- **Voice channel detection**: `/.well-known/virc.json` voice category is the sole source. No mode/topic/naming conventions.
-- **Invite link format**: Standardized to `https://virc.app/join/<server>/<token>`. See Invite Link System.
-- **Server name**: `virc.json` `name` = display name, Ergo `server.name` = hostname. virc.json takes precedence for display.
+- **Voice channel detection**: `/.well-known/accord.json` voice category is the sole source. No mode/topic/naming conventions.
+- **Invite link format**: Standardized to `https://accord.app/join/<server>/<token>`. See Invite Link System.
+- **Server name**: `accord.json` `name` = display name, Ergo `server.name` = hostname. accord.json takes precedence for display.

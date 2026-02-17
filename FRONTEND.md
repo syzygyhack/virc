@@ -1,6 +1,6 @@
-# virc Frontend Design Reference
+# accord Frontend Design Reference
 
-UI/UX specification for the virc client. Discord-inspired layout, IRC-rooted behavior, server-owner customizable.
+UI/UX specification for the accord client. Discord-inspired layout, IRC-rooted behavior, server-owner customizable.
 
 ---
 
@@ -10,7 +10,7 @@ UI/UX specification for the virc client. Discord-inspired layout, IRC-rooted beh
 2. **Information density is a feature** — IRC users value seeing more content, not less. Don't waste space on padding and decoration. Let users control density.
 3. **Server owners are first-class** — Branding, theming, layout hints, and welcome experiences are configurable per-server without forking the client.
 4. **Progressive disclosure** — Simple by default, powerful on demand. A new user sees a clean chat. A power user can enable compact mode, raw IRC output, keyboard-driven navigation.
-5. **Cache-first mindset** — The client should feel instant. Cache aggressively. Reconnect silently. Never show a spinner when local data is available. Note: "offline-first" does not mean full offline functionality — virc is a real-time chat app and most features require a connection. See Offline Behavior section for what works without one.
+5. **Cache-first mindset** — The client should feel instant. Cache aggressively. Reconnect silently. Never show a spinner when local data is available. Note: "offline-first" does not mean full offline functionality — accord is a real-time chat app and most features require a connection. See Offline Behavior section for what works without one.
 
 ---
 
@@ -74,7 +74,7 @@ Back gestures (swipe right) navigate up the stack. No bottom tab bar — keep it
 
 ### Design Tokens (CSS Custom Properties)
 
-virc uses a semantic token system. Server owners override tokens, not raw colors.
+accord uses a semantic token system. Server owners override tokens, not raw colors.
 
 ```css
 /* Surface hierarchy (backgrounds) */
@@ -290,7 +290,7 @@ A vertical strip of circular icons, one per connected server.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│  # channel-name  │  Topic: Welcome to virc! Read the rules.  │  🔍 👥 📌 │
+│  # channel-name  │  Topic: Welcome to accord! Read the rules.  │  🔍 👥 📌 │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -537,7 +537,7 @@ Join, part, quit, nick changes, mode changes — rendered inline but visually di
 - **Presence dots** (reconciling IRC AWAY status with always-on mode):
   - `●` Green — Online: user has at least one active connection AND is not AWAY
   - `◑` Amber — Idle: user is AWAY (auto-set by Ergo when always-on with no connections, or manually set by user). Display text: AWAY reason if set, or "Idle"
-  - `●` Red — Do Not Disturb: user is AWAY with reason starting with `[DND]` (virc convention, e.g., `AWAY :[DND] Focusing`)
+  - `●` Red — Do Not Disturb: user is AWAY with reason starting with `[DND]` (accord convention, e.g., `AWAY :[DND] Focusing`)
   - `○` Gray — Offline: user's always-on session has expired, or user has no always-on mode and is disconnected. Note: with always-on enabled (default), users are never truly "offline" — they transition to Idle when no clients are connected. The "Offline" group only shows users whose always-on sessions have expired or who have opted out of always-on.
 - **Hover card**: On hover, show a mini user card (username, account name, role, join date, custom status)
 - **Click**: Opens full user profile popout
@@ -663,16 +663,16 @@ This is a key differentiator. Server owners should be able to brand their commun
 
 | Property | How It's Stored | Where It Appears |
 |----------|-----------------|------------------|
-| **Server display name** | `/.well-known/virc.json` → `name` (display name, e.g., "My Community"). Falls back to Ergo's `server.name` (hostname) if virc.json is unavailable. | Server list tooltip, sidebar header |
-| **Server icon** | `/.well-known/virc.json` → `icon` | Server list icon |
-| **Server description** | `/.well-known/virc.json` → `description` | Server invite page, welcome modal |
-| **Welcome message** | `/.well-known/virc.json` → `welcome.message` | Shown to users on first join |
-| **Channel categories** | `/.well-known/virc.json` → `channels.categories` | Sidebar groupings (decorative) |
-| **Role names** | `/.well-known/virc.json` → `roles` | Member list, profile cards (decorative) |
-| **Role colors** | `/.well-known/virc.json` → `roles.*.color` | Nick color in messages, role badge (decorative) |
-| **Accent color** | `/.well-known/virc.json` → `theme.accent` | --accent-primary override |
-| **Theme colors** | `/.well-known/virc.json` theme object | CSS variable overrides only (no arbitrary CSS) |
-| **Custom emoji** | `/.well-known/virc.json` → `emoji`, assets on virc-files | Emoji picker, inline rendering |
+| **Server display name** | `/.well-known/accord.json` → `name` (display name, e.g., "My Community"). Falls back to Ergo's `server.name` (hostname) if accord.json is unavailable. | Server list tooltip, sidebar header |
+| **Server icon** | `/.well-known/accord.json` → `icon` | Server list icon |
+| **Server description** | `/.well-known/accord.json` → `description` | Server invite page, welcome modal |
+| **Welcome message** | `/.well-known/accord.json` → `welcome.message` | Shown to users on first join |
+| **Channel categories** | `/.well-known/accord.json` → `channels.categories` | Sidebar groupings (decorative) |
+| **Role names** | `/.well-known/accord.json` → `roles` | Member list, profile cards (decorative) |
+| **Role colors** | `/.well-known/accord.json` → `roles.*.color` | Nick color in messages, role badge (decorative) |
+| **Accent color** | `/.well-known/accord.json` → `theme.accent` | --accent-primary override |
+| **Theme colors** | `/.well-known/accord.json` theme object | CSS variable overrides only (no arbitrary CSS) |
+| **Custom emoji** | `/.well-known/accord.json` → `emoji`, assets on accord-files | Emoji picker, inline rendering |
 | **Slow mode** | Channel mode (rate limit) | Input shows cooldown timer |
 
 ### Theme Override Mechanism
@@ -694,7 +694,7 @@ Server-provided theme overrides are **CSS custom property values only** — not 
 - Break interactive elements with `pointer-events: none`
 - Resize/hide security-relevant UI
 
-**What server owners CAN customize** (via `/.well-known/virc.json` theme object):
+**What server owners CAN customize** (via `/.well-known/accord.json` theme object):
 - Any design token value from the Color System section (surfaces, text colors, accent, etc.)
 - That's it. No selectors, no properties beyond color values.
 
@@ -705,7 +705,7 @@ Server-provided theme overrides are **CSS custom property values only** — not 
 
 ### Server Config Format
 
-Served at `GET https://<server>/.well-known/virc.json` by virc-files. See PLAN.md: Server Config Discovery for the full schema. The frontend consumes this config as described in the Server Config Integration section below.
+Served at `GET https://<server>/.well-known/accord.json` by accord-files. See PLAN.md: Server Config Discovery for the full schema. The frontend consumes this config as described in the Server Config Integration section below.
 
 ---
 
@@ -779,9 +779,9 @@ Consistent, deterministic nick colors so each user is always the same color.
 The client uses markdown-like syntax in the input box for convenience, but **always converts to mIRC control codes before sending**. On the receiving side, the client always renders mIRC codes — regardless of what client sent them.
 
 This means:
-- virc ↔ virc: Full formatting works
-- virc → HexChat/irssi: Formatting works (they understand mIRC codes)
-- HexChat → virc: Formatting works (virc renders mIRC codes)
+- accord ↔ accord: Full formatting works
+- accord → HexChat/irssi: Formatting works (they understand mIRC codes)
+- HexChat → accord: Formatting works (accord renders mIRC codes)
 - No dual-rendering bugs, no format detection heuristics
 
 | User Types (Input) | Wire (IRC) | Rendered |
@@ -790,10 +790,10 @@ This means:
 | `*italic*` | `\x1Ditalic\x1D` | *italic* |
 | `~~strike~~` | `\x1Estrike\x1E` | ~~strike~~ |
 | `` `code` `` | `\x11code\x11` | `code` |
-| `\|\|spoiler\|\|` | `\x11[spoiler]\x11content\x11[/spoiler]\x11` | Blurred until clicked (virc-only; other clients see `[spoiler]content[/spoiler]`) |
+| `\|\|spoiler\|\|` | `\x11[spoiler]\x11content\x11[/spoiler]\x11` | Blurred until clicked (accord-only; other clients see `[spoiler]content[/spoiler]`) |
 | ` ```code block``` ` | `draft/multiline` batch with `\x11` wrapping | Syntax-highlighted block |
 
-**No custom format tags.** We do not send a `+virc/format=markdown` tag. The wire format is always mIRC codes. This avoids the entire class of "which format is this message in?" bugs.
+**No custom format tags.** We do not send a `+accord/format=markdown` tag. The wire format is always mIRC codes. This avoids the entire class of "which format is this message in?" bugs.
 
 ### URL Detection
 
@@ -801,7 +801,7 @@ Auto-linkify URLs in message text. Render inline previews for:
 - **Images** (jpg, png, gif, webp): Inline thumbnail, click to expand
 - **Videos** (mp4, webm): Inline player with controls
 - **Audio** (mp3, ogg, flac): Inline player bar
-- **Other URLs**: Open Graph preview card (title, description, thumbnail) fetched by virc-files or client-side
+- **Other URLs**: Open Graph preview card (title, description, thumbnail) fetched by accord-files or client-side
 
 ### @Mentions and #Channels
 
@@ -931,7 +931,7 @@ Every empty state should be helpful, not just blank:
 
 ## Offline Behavior
 
-virc is a real-time chat app — most features require a connection. "Cache-first" means the app loads instantly from local data, not that it works offline like a document editor.
+accord is a real-time chat app — most features require a connection. "Cache-first" means the app loads instantly from local data, not that it works offline like a document editor.
 
 ### What Works Offline
 
@@ -971,11 +971,11 @@ virc is a real-time chat app — most features require a connection. "Cache-firs
 
 ## Server Config Integration
 
-The frontend fetches `/.well-known/virc.json` from the server (see PLAN.md: Server Config Discovery) and applies it to the UI. Here is how each config property maps to frontend behavior:
+The frontend fetches `/.well-known/accord.json` from the server (see PLAN.md: Server Config Discovery) and applies it to the UI. Here is how each config property maps to frontend behavior:
 
 | Config Field | Frontend Effect |
 |-------------|----------------|
-| `name` | Display name shown in server list tooltip and sidebar header. Falls back to Ergo hostname (`server.name`) if virc.json unavailable. |
+| `name` | Display name shown in server list tooltip and sidebar header. Falls back to Ergo hostname (`server.name`) if accord.json unavailable. |
 | `icon` | Server list icon image (falls back to 2-letter abbreviation if missing) |
 | `description` | Shown in the "Add Server" / invite accept modal |
 | `theme.accent` | Overrides `--accent-primary` CSS variable |

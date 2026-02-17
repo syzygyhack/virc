@@ -1,8 +1,8 @@
-# virc
+# accord
 
 **A Discord-competitive chat platform built on IRC.**
 
-virc wraps the battle-tested IRC protocol in a modern UI — real-time messaging, voice channels, reactions, typing indicators, presence, and read markers — all running on standard IRCv3 infrastructure. Ships as a native desktop app via Tauri. No proprietary server. No vendor lock-in. One WebSocket connection.
+accord wraps the battle-tested IRC protocol in a modern UI — real-time messaging, voice channels, reactions, typing indicators, presence, and read markers — all running on standard IRCv3 infrastructure. Ships as a native desktop app via Tauri. No proprietary server. No vendor lock-in. One WebSocket connection.
 
 > Svelte 5. IRC native. LiveKit voice. Tauri desktop. Self-hostable.
 
@@ -12,13 +12,13 @@ virc wraps the battle-tested IRC protocol in a modern UI — real-time messaging
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                  virc Desktop App                       │
+│                  accord Desktop App                     │
 │        (Tauri 2 + Svelte 5 + SvelteKit SPA)             │
 ├──────────────┬──────────────────────┬───────────────────┤
 │  WebSocket   │   HTTP + JWT         │   WebRTC          │
 │  (IRC)       │   (Auth, Config)     │   (Voice/Video)   │
 ├──────────────┼──────────────────────┼───────────────────┤
-│  Ergo IRC    │   virc-files         │   LiveKit SFU     │
+│  Ergo IRC    │   accord-files       │   LiveKit SFU     │
 │  - Accounts  │   - Auth bridge      │  - Voice rooms    │
 │  - Channels  │   - JWT minting      │  - Mute/deafen    │
 │  - History   │   - Config serving   │  - Speaker detect │
@@ -35,7 +35,7 @@ virc wraps the battle-tested IRC protocol in a modern UI — real-time messaging
 └─────────────────────────────────────────────────────────┘
 ```
 
-The client connects to Ergo over a single WebSocket for all chat functionality. Voice goes peer-to-peer via LiveKit. The backend (`virc-files`) handles auth (validating credentials against Ergo's HTTP API and minting JWTs), file uploads, URL preview unfurling, invite links, and server configuration. Caddy fronts everything.
+The client connects to Ergo over a single WebSocket for all chat functionality. Voice goes peer-to-peer via LiveKit. The backend (`accord-files`) handles auth (validating credentials against Ergo's HTTP API and minting JWTs), file uploads, URL preview unfurling, invite links, and server configuration. Caddy fronts everything.
 
 ### Design Decisions
 
@@ -56,7 +56,7 @@ The client connects to Ergo over a single WebSocket for all chat functionality. 
 - Message history pagination (CHATHISTORY BEFORE/LATEST/AFTER)
 - Replies with quoted parent preview
 - Emoji reactions (unicode, via TAGMSG)
-- Message editing with `+virc/edit` tag (edit-in-place with original msgid tracking)
+- Message editing with `+accord/edit` tag (edit-in-place with original msgid tracking)
 - Message deletion (REDACT)
 - Typing indicators (throttled, auto-expiring)
 - Read markers synced via MARKREAD
@@ -109,7 +109,7 @@ The client connects to Ergo over a single WebSocket for all chat functionality. 
 ### Server Management
 - Server Settings modal with 7 tabs: Overview, Channels, Roles, Members, Invites, Appearance, Moderation
 - Invite link system (create, validate, expire, max-use, revoke)
-- Server config via `virc.json` (channels, roles, themes, emoji, welcome message)
+- Server config via `accord.json` (channels, roles, themes, emoji, welcome message)
 - Server theme overrides with WCAG contrast warnings and per-server disable toggles
 - Custom server emoji in picker, messages, and reactions
 - Welcome modal with suggested channels
@@ -150,7 +150,7 @@ The client connects to Ergo over a single WebSocket for all chat functionality. 
 
 ## IRCv3 Capabilities
 
-virc negotiates these capabilities with the server:
+accord negotiates these capabilities with the server:
 
 | Capability | Purpose |
 |------------|---------|
@@ -173,7 +173,7 @@ virc negotiates these capabilities with the server:
 | `cap-notify` | Server-initiated CAP changes |
 | `setname` | Real name changes |
 
-Client-only tags (relayed transparently): `+draft/reply`, `+draft/react`, `+typing`, `+virc/edit`.
+Client-only tags (relayed transparently): `+draft/reply`, `+draft/react`, `+typing`, `+accord/edit`.
 
 ---
 
@@ -189,24 +189,24 @@ Client-only tags (relayed transparently): `+draft/reply`, `+draft/react`, `+typi
 
 ```bash
 # Clone
-git clone https://github.com/syzygyhack/virc.git
-cd virc
+git clone https://github.com/syzygyhack/accord.git
+cd accord
 
 # Configure environment
 cp .env.example .env
 # Edit .env — set JWT_SECRET at minimum
 
 # Build the client
-cd virc-client
+cd accord-client
 npm install
 npm run build
 cd ..
 
-# Start everything (Ergo, MariaDB, LiveKit, virc-files, Caddy)
+# Start everything (Ergo, MariaDB, LiveKit, accord-files, Caddy)
 docker compose up -d
 ```
 
-Docker Compose runs all five services. Caddy serves the built client from `/srv/virc` and proxies `/ws` to Ergo, `/api/*` to virc-files.
+Docker Compose runs all five services. Caddy serves the built client from `/srv/accord` and proxies `/ws` to Ergo, `/api/*` to accord-files.
 
 ### LAN Access
 
@@ -224,7 +224,7 @@ All Docker services bind to `0.0.0.0` by default, so ports are already network-a
 ### Desktop Build (Tauri)
 
 ```bash
-cd virc-client
+cd accord-client
 
 # Development (hot-reload with Tauri window)
 npm run tauri:dev
@@ -242,17 +242,17 @@ Requires [Rust](https://rustup.rs/) and platform-specific Tauri dependencies (se
 docker compose up -d
 
 # Start client dev server (separate terminal)
-cd virc-client && npm install && npm run dev
+cd accord-client && npm install && npm run dev
 ```
 
 ### Run Tests
 
 ```bash
 # Client tests (744 tests, Vitest)
-cd virc-client && npm test
+cd accord-client && npm test
 
 # Server tests (155 tests, Bun)
-cd virc-files && bun test
+cd accord-files && bun test
 ```
 
 ---
@@ -260,8 +260,8 @@ cd virc-files && bun test
 ## Project Structure
 
 ```
-virc/
-├── virc-client/                 # Svelte 5 + SvelteKit frontend
+accord/
+├── accord-client/                 # Svelte 5 + SvelteKit frontend
 │   ├── src/
 │   │   ├── components/          # 26 Svelte components
 │   │   ├── lib/
@@ -289,13 +289,13 @@ virc/
 │       ├── capabilities/        # Tauri permission grants
 │       ├── icons/               # App icons (all platforms)
 │       └── src/                 # Rust entry point
-├── virc-files/                  # Bun + Hono backend (runs in Docker)
+├── accord-files/                  # Bun + Hono backend (runs in Docker)
 │   └── src/
 │       ├── routes/
 │       │   ├── auth.ts          # POST /api/auth (JWT minting)
 │       │   ├── account.ts       # POST /api/account (email/password change)
 │       │   ├── livekit.ts       # POST /api/livekit/token
-│       │   ├── config.ts        # GET /.well-known/virc.json
+│       │   ├── config.ts        # GET /.well-known/accord.json
 │       │   ├── files.ts         # File upload/download
 │       │   ├── invite.ts        # Invite link CRUD
 │       │   └── preview.ts       # URL unfurling (OpenGraph)
@@ -316,13 +316,13 @@ virc/
 
 ## Configuration
 
-Server identity, channel layout, roles, and theming are driven by `virc.json`, served at `/.well-known/virc.json`:
+Server identity, channel layout, roles, and theming are driven by `accord.json`, served at `/.well-known/accord.json`:
 
 ```jsonc
 {
   "name": "My Server",
   "icon": "/icon.png",
-  "description": "A virc community",
+  "description": "An accord community",
   "channels": {
     "categories": [
       {
@@ -371,7 +371,7 @@ No client forking required for customization.
 | `SITE_ADDRESS` | No | `:80` | Caddy site address (set to domain for auto-HTTPS) |
 | `MAX_FILE_SIZE` | No | `26214400` | Max upload size in bytes (25 MB) |
 | `PORT` | No | `8080` | Backend listen port |
-| `CONFIG_PATH` | No | `config/virc.json` | Server config file path |
+| `CONFIG_PATH` | No | `config/accord.json` | Server config file path |
 | `SERVER_NAME` | No | — | Server display name |
 | `SERVER_ID` | No | — | Stable server identifier for JWTs/invite links (URL-safe; defaults to BASE_URL host or safe SERVER_NAME) |
 
@@ -384,7 +384,7 @@ No client forking required for customization.
 | **ergo** | `ghcr.io/ergochat/ergo:stable` | 6667, 8097 | IRC server (WebSocket + plaintext) |
 | **mysql** | `mariadb:11` | 3306 | Message history persistence |
 | **livekit** | `livekit/livekit-server:v1.9.11` | 7880-7881, 50060-50160/udp | Voice/video SFU |
-| **virc-files** | Built from `./virc-files` | 8080 | Auth bridge, file uploads, config |
+| **accord-files** | Built from `./accord-files` | 8080 | Auth bridge, file uploads, config |
 | **caddy** | `caddy:2` | 80, 443 | Reverse proxy + static SPA |
 
 ---
@@ -488,7 +488,7 @@ No client forking required for customization.
 
 ## How This Was Built
 
-The codebase was authored by **Claude Opus 4** (Anthropic) running inside the **Avril** harness — a session-based agent framework for quality-assured code generation. Work was orchestrated by **Cardinal**, a task planning and execution system that decomposed design specs into implementable work units, managed dependencies, and tracked progress.
+The codebase was authored by **Claude Opus 4.6** (Anthropic) running inside the **Avril** harness — a session-based agent framework for quality-assured code generation. Work was orchestrated by **Cardinal**, a task planning and execution system that decomposed design specs into implementable work units, managed dependencies, and tracked progress.
 
 Three Cardinal sessions built the project end-to-end:
 
@@ -500,7 +500,7 @@ Delivered: Docker Compose stack (Ergo, MariaDB, LiveKit, Caddy), SvelteKit proje
 ### Session 2: Feature Completion (Feb 15)
 Cardinal planned **22 tasks** to close all remaining spec gaps.
 
-Delivered: message editing with `+virc/edit` tag, file upload backend and client UI (drag-and-drop, paste-to-upload), inline media previews (image/video/audio), Open Graph link preview cards with SSRF-protected server-side fetch, four themes (dark/light/AMOLED/compact), compact message display mode, per-channel notification settings, invite link system (create/validate/expire/revoke), server list sidebar with drag reorder, user profile popout, collapsible system messages, custom server emoji, pinned messages, message search panel, keybinding customization UI, raw IRC debug panel, and a full code review pass.
+Delivered: message editing with `+accord/edit` tag, file upload backend and client UI (drag-and-drop, paste-to-upload), inline media previews (image/video/audio), Open Graph link preview cards with SSRF-protected server-side fetch, four themes (dark/light/AMOLED/compact), compact message display mode, per-channel notification settings, invite link system (create/validate/expire/revoke), server list sidebar with drag reorder, user profile popout, collapsible system messages, custom server emoji, pinned messages, message search panel, keybinding customization UI, raw IRC debug panel, and a full code review pass.
 
 ### Session 3: Polish & Review (Feb 16-17)
 Cardinal planned **31 tasks** targeting the remaining TODO items and a comprehensive code review.
@@ -508,7 +508,7 @@ Cardinal planned **31 tasks** targeting the remaining TODO items and a comprehen
 Delivered: `/join` slash command, member list virtual scrolling and hover cards, server list context menu, message hover menu (edit/copy/mark unread), Server Settings modal (7 tabs), User Settings Notifications and Account tabs, user profile popout with registered date, resizable sidebar columns, channel sidebar ops affordances (create button, drag reorder, read-only icons), header bar channel settings gear, reaction bar improvements, keyboard shortcuts, server config integration (welcome modal, role colors), spoiler formatting, syntax-highlighted code blocks, empty states and image blur-up transitions, shared constant deduplication, and two rounds of code review fixes (security, performance, accessibility, CSS).
 
 ### Post-Cardinal
-Development continued as **human-agent collaboration** — the human directed priorities and reviewed results while Claude (Opus 4 via Avril) implemented features and fixes. Cross-model review (**Claude + OpenAI Codex**) identified issues including MODE parsing drift, MONITOR timing races, and slash command edge cases, all resolved. Post-Cardinal work added: voice manager extraction, accessibility utilities (focus trapping, menu keyboard navigation, ARIA tab patterns), channel navigation module, server theme disable toggles, WCAG contrast warnings, and a comprehensive TODO rewrite for the rename/publish roadmap.
+Development continued as **human-agent collaboration** — the human directed priorities and reviewed results while Claude (Opus 4.6 via Avril) implemented features and fixes. Cross-model review (**Claude + OpenAI Codex**) identified issues including MODE parsing drift, MONITOR timing races, and slash command edge cases, all resolved. Post-Cardinal work added: voice manager extraction, accessibility utilities (focus trapping, menu keyboard navigation, ARIA tab patterns), channel navigation module, server theme disable toggles, WCAG contrast warnings, and a comprehensive TODO rewrite for the rename/publish roadmap.
 
 ### By the Numbers
 

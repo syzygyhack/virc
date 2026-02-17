@@ -290,6 +290,67 @@ describe('renderMessage with custom emoji', () => {
 	});
 });
 
+describe('markdownToIRC spoiler', () => {
+	it('converts ||text|| to spoiler wire format', () => {
+		expect(markdownToIRC('||secret||')).toBe(
+			'\x11[spoiler]\x11secret\x11[/spoiler]\x11'
+		);
+	});
+
+	it('converts spoiler mixed with other formatting', () => {
+		expect(markdownToIRC('**bold** and ||secret||')).toBe(
+			'\x02bold\x02 and \x11[spoiler]\x11secret\x11[/spoiler]\x11'
+		);
+	});
+
+	it('does not convert single pipes', () => {
+		expect(markdownToIRC('|not spoiler|')).toBe('|not spoiler|');
+	});
+
+	it('handles multiple spoilers in one message', () => {
+		const result = markdownToIRC('||one|| and ||two||');
+		expect(result).toBe(
+			'\x11[spoiler]\x11one\x11[/spoiler]\x11 and \x11[spoiler]\x11two\x11[/spoiler]\x11'
+		);
+	});
+});
+
+describe('renderIRC spoiler', () => {
+	it('renders spoiler wire format as span with spoiler class', () => {
+		const wire = '\x11[spoiler]\x11secret\x11[/spoiler]\x11';
+		expect(renderIRC(wire)).toBe('<span class="spoiler">secret</span>');
+	});
+
+	it('renders spoiler alongside other formatting', () => {
+		const wire = '\x02bold\x02 \x11[spoiler]\x11secret\x11[/spoiler]\x11';
+		const result = renderIRC(wire);
+		expect(result).toContain('<strong>bold</strong>');
+		expect(result).toContain('<span class="spoiler">secret</span>');
+	});
+
+	it('escapes HTML inside spoiler content', () => {
+		const wire = '\x11[spoiler]\x11<script>alert(1)</script>\x11[/spoiler]\x11';
+		const result = renderIRC(wire);
+		expect(result).toContain('&lt;script&gt;');
+		expect(result).not.toContain('<script>');
+		expect(result).toContain('class="spoiler"');
+	});
+
+	it('still renders regular monospace when not spoiler pattern', () => {
+		expect(renderIRC('\x11code\x11')).toBe('<code>code</code>');
+	});
+});
+
+describe('renderMessage spoiler end-to-end', () => {
+	it('renders spoiler from markdown input through full pipeline', () => {
+		const input = '||secret stuff||';
+		const wire = markdownToIRC(input);
+		const html = renderMessage(wire, 'alice');
+		expect(html).toContain('class="spoiler"');
+		expect(html).toContain('secret stuff');
+	});
+});
+
 describe('renderMessage XSS safety', () => {
 	it('neutralizes script tags', () => {
 		const result = renderMessage('<script>alert(1)</script>', 'me');

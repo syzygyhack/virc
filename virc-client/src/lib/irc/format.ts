@@ -141,6 +141,19 @@ export function renderIRC(text: string): string {
 			strike = toggleTag(strike, '<s>', '</s>');
 			i++;
 		} else if (ch === MONOSPACE) {
+			// Check for spoiler pattern: \x11[spoiler]\x11...\x11[/spoiler]\x11
+			const spoilerOpen = `${MONOSPACE}[spoiler]${MONOSPACE}`;
+			const spoilerClose = `${MONOSPACE}[/spoiler]${MONOSPACE}`;
+			if (text.startsWith(spoilerOpen, i)) {
+				const contentStart = i + spoilerOpen.length;
+				const closeIdx = text.indexOf(spoilerClose, contentStart);
+				if (closeIdx !== -1) {
+					const content = text.slice(contentStart, closeIdx);
+					result += `<span class="spoiler">${escapeHTML(content)}</span>`;
+					i = closeIdx + spoilerClose.length;
+					continue;
+				}
+			}
 			mono = toggleTag(mono, '<code>', '</code>');
 			i++;
 		} else if (ch === RESET) {
@@ -225,8 +238,9 @@ export function renderIRC(text: string): string {
 /**
  * Convert markdown-like input to mIRC formatting codes.
  *
- * Supports: **bold**, *italic*, ~~strike~~, `code`
+ * Supports: **bold**, *italic*, ~~strike~~, `code`, ||spoiler||
  * Bold must be processed before italic to avoid ambiguity.
+ * Spoiler must be processed before code to avoid `||` being left as plain text.
  */
 export function markdownToIRC(text: string): string {
 	let result = text;
@@ -239,6 +253,9 @@ export function markdownToIRC(text: string): string {
 
 	// Strikethrough: ~~text~~ → \x1Etext\x1E
 	result = result.replace(/~~(.+?)~~/g, `${STRIKETHROUGH}$1${STRIKETHROUGH}`);
+
+	// Spoiler: ||text|| → \x11[spoiler]\x11text\x11[/spoiler]\x11
+	result = result.replace(/\|\|(.+?)\|\|/g, `${MONOSPACE}[spoiler]${MONOSPACE}$1${MONOSPACE}[/spoiler]${MONOSPACE}`);
 
 	// Inline code: `text` → \x11text\x11
 	result = result.replace(/`(.+?)`/g, `${MONOSPACE}$1${MONOSPACE}`);

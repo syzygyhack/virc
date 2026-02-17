@@ -295,6 +295,14 @@
 		moreMenuOpen = false;
 	}
 
+	/** Toggle spoiler reveal when clicking a .spoiler element inside message text. */
+	function handleMessageTextClick(event: MouseEvent) {
+		const target = event.target as HTMLElement;
+		if (target.classList.contains('spoiler')) {
+			target.classList.toggle('spoiler-revealed');
+		}
+	}
+
 	/** Open profile popout when clicking a nick in a message. */
 	function handleNickClick(event: MouseEvent) {
 		onnickclick?.(message.nick, message.account, event);
@@ -396,7 +404,9 @@
 			{#if message.isRedacted}
 				<span class="message-text redacted">[message deleted]</span>
 			{:else if !isMediaOnly}
-				<span class="message-text">{@html renderedText}</span>
+				<!-- svelte-ignore a11y_click_events_have_key_events -->
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<span class="message-text" onclick={handleMessageTextClick}>{@html renderedText}</span>
 			{/if}
 		</div>
 	</div>
@@ -599,7 +609,9 @@
 					<div class="message-text redacted">[message deleted]</div>
 				{:else}
 					{#if !isMediaOnly}
-						<div class="message-text">{@html renderedText}</div>
+						<!-- svelte-ignore a11y_click_events_have_key_events -->
+						<!-- svelte-ignore a11y_no_static_element_interactions -->
+						<div class="message-text" onclick={handleMessageTextClick}>{@html renderedText}</div>
 					{/if}
 					{#if mediaUrls.length > 0}
 						<div class="media-previews">
@@ -664,7 +676,9 @@
 				<div class="message-text redacted">[message deleted]</div>
 			{:else}
 				{#if !isMediaOnly}
-					<div class="message-text">{@html renderedText}</div>
+					<!-- svelte-ignore a11y_click_events_have_key_events -->
+					<!-- svelte-ignore a11y_no_static_element_interactions -->
+					<div class="message-text" onclick={handleMessageTextClick}>{@html renderedText}</div>
 				{/if}
 				{#if mediaUrls.length > 0}
 					<div class="media-previews">
@@ -1107,6 +1121,25 @@
 
 	.message-text :global(.channel-ref:hover) {
 		text-decoration: underline;
+	}
+
+	/* Spoiler text — blurred until clicked */
+	.message-text :global(.spoiler) {
+		background: var(--surface-highest);
+		border-radius: 3px;
+		padding: 0 2px;
+		cursor: pointer;
+		filter: blur(4px);
+		-webkit-filter: blur(4px);
+		transition: filter 0.2s ease, -webkit-filter 0.2s ease;
+		user-select: none;
+	}
+
+	.message-text :global(.spoiler.spoiler-revealed) {
+		filter: none;
+		-webkit-filter: none;
+		cursor: text;
+		user-select: auto;
 	}
 
 	/* Media Previews */

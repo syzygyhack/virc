@@ -39,14 +39,14 @@
 	const server = $derived(getActiveServer());
 	const config = $derived(serverConfig.config);
 
-	/** Merged role map: virc.json roles override defaults. */
+	/** Merged role map: accord.json roles override defaults. */
 	const roles = $derived.by(() => {
 		const configRoles = config?.roles;
 		if (configRoles && Object.keys(configRoles).length > 0) return configRoles;
 		return DEFAULT_ROLES;
 	});
 
-	/** Categories from channelUIState (populated from virc.json on connect). */
+	/** Categories from channelUIState (populated from accord.json on connect). */
 	const categories = $derived(channelUIState.categories);
 
 	/** Uncategorized channels. */
@@ -76,7 +76,7 @@
 
 	// --- Appearance tab ---
 
-	/** Theme overrides parsed from virc.json config. */
+	/** Theme overrides parsed from accord.json config. */
 	const themeOverrides = $derived.by((): Record<string, string> => {
 		const theme = config?.theme;
 		if (!theme) return {};
@@ -309,7 +309,7 @@
 
 					{#if !config}
 						<p class="hint-text">
-							Server configuration not available. The server may not have a virc.json file.
+							Server configuration not available. The server may not have a accord.json file.
 						</p>
 					{/if}
 
@@ -395,7 +395,7 @@
 							{/each}
 						</div>
 						<p class="hint-text">
-							Role configuration is read from the server's virc.json. Editing requires server admin access.
+							Role configuration is read from the server's accord.json. Editing requires server admin access.
 						</p>
 					</div>
 
@@ -493,7 +493,7 @@
 				{:else if activeTab === 'appearance'}
 					<div class="appearance-section">
 						<p class="section-description">
-							Server theme overrides from the virc.json configuration. These are CSS variable values that layer on top of your current theme.
+							Server theme overrides from the accord.json configuration. These are CSS variable values that layer on top of your current theme.
 						</p>
 
 						{#if hasThemeOverrides}
@@ -535,7 +535,7 @@
 								<p class="hint-text">These overrides are configured but not currently applied.</p>
 							{/if}
 						{:else}
-							<p class="hint-text">This server has no theme overrides configured in virc.json.</p>
+							<p class="hint-text">This server has no theme overrides configured in accord.json.</p>
 						{/if}
 
 						<p class="hint-text">

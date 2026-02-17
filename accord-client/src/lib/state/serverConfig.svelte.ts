@@ -1,14 +1,14 @@
 /**
- * Reactive store for the server's virc.json configuration.
+ * Reactive store for the server's accord.json configuration.
  *
  * Populated after connecting to a server and fetching its
- * /.well-known/virc.json. Read by ServerSettings modal and
+ * /.well-known/accord.json. Read by ServerSettings modal and
  * other components that need server metadata.
  */
 
 import { DEFAULT_ROLES } from '$lib/constants';
 
-export interface VircConfig {
+export interface AccordConfig {
 	name?: string;
 	icon?: string;
 	filesUrl?: string;
@@ -34,7 +34,7 @@ export interface VircConfig {
 }
 
 interface ServerConfigStore {
-	config: VircConfig | null;
+	config: AccordConfig | null;
 }
 
 /** Reactive server config — components read this directly. */
@@ -42,8 +42,8 @@ export const serverConfig: ServerConfigStore = $state({
 	config: null,
 });
 
-/** Store the fetched virc.json config. */
-export function setServerConfig(config: VircConfig): void {
+/** Store the fetched accord.json config. */
+export function setServerConfig(config: AccordConfig): void {
 	serverConfig.config = config;
 }
 
@@ -65,7 +65,7 @@ function isSafeColor(color: string): boolean {
 
 /**
  * Get the role color for a given mode prefix.
- * Uses virc.json roles if available, otherwise falls back to defaults.
+ * Uses accord.json roles if available, otherwise falls back to defaults.
  * Returns null if the mode has no configured color or color is invalid.
  */
 export function getRoleColor(mode: string | null): string | null {

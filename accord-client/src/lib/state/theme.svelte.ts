@@ -322,8 +322,8 @@ export function clearServerTheme(): void {
 }
 
 /**
- * Parse virc.json theme config into CSS variable overrides.
- * Accepts the `theme` object from virc.json:
+ * Parse accord.json theme config into CSS variable overrides.
+ * Accepts the `theme` object from accord.json:
  * { accent?: string, surfaces?: { lowest?, low?, base?, high?, highest? } }
  */
 export function parseServerTheme(themeConfig: {

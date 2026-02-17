@@ -231,7 +231,7 @@ export function getActiveChannel(): string | null {
 }
 
 /**
- * Set categories from virc.json. Each category starts expanded.
+ * Set categories from accord.json. Each category starts expanded.
  * Applies any saved channel order from localStorage.
  */
 export function setCategories(cats: Array<{ name: string; channels: string[]; voice?: boolean; readonly?: boolean }>): void {

@@ -27,8 +27,8 @@ describe('deriveHttpUrl', () => {
 	});
 
 	test('preserves hostname with subdomain, strips default port', () => {
-		expect(deriveHttpUrl('wss://irc.virc.example.com:443/ws')).toBe(
-			'https://irc.virc.example.com',
+		expect(deriveHttpUrl('wss://irc.accord.example.com:443/ws')).toBe(
+			'https://irc.accord.example.com',
 		);
 	});
 });
@@ -40,7 +40,7 @@ describe('discoverFilesUrl', () => {
 		globalThis.fetch = originalFetch;
 	});
 
-	test('returns httpBase when virc.json exists without filesUrl', async () => {
+	test('returns httpBase when accord.json exists without filesUrl', async () => {
 		globalThis.fetch = vi.fn(async () =>
 			new Response(JSON.stringify({ name: 'test' }), { status: 200 }),
 		) as typeof fetch;
@@ -50,7 +50,7 @@ describe('discoverFilesUrl', () => {
 		expect(globalThis.fetch).toHaveBeenCalledOnce();
 	});
 
-	test('returns filesUrl from virc.json when present', async () => {
+	test('returns filesUrl from accord.json when present', async () => {
 		globalThis.fetch = vi.fn(async () =>
 			new Response(
 				JSON.stringify({ name: 'test', filesUrl: 'https://files.example.com' }),

@@ -16,12 +16,12 @@ export interface CustomEmoji {
 }
 
 /**
- * Module-level store for custom emoji from the server's virc.json.
+ * Module-level store for custom emoji from the server's accord.json.
  * Set once during connection init; read by emoji picker and format pipeline.
  */
 let _customEmojiMap: Map<string, string> = new Map();
 
-/** Set the custom emoji map (called when virc.json is fetched). */
+/** Set the custom emoji map (called when accord.json is fetched). */
 export function setCustomEmoji(emojiMap: Record<string, string>): void {
 	_customEmojiMap = new Map(Object.entries(emojiMap));
 }

@@ -134,7 +134,7 @@
 	}
 
 	/**
-	* Channels in channelState that don't appear in any virc.json category.
+	* Channels in channelState that don't appear in any accord.json category.
 	* These are shown in the "Other" group at the bottom.
 	*/
 	let otherChannels = $derived.by((): string[] => {
@@ -242,7 +242,7 @@
 <aside class="channel-sidebar" aria-label="Channels" onclick={closeContextMenu}>
 	<div class="server-header">
 		<button class="server-header-btn" onclick={toggleServerDropdown} aria-expanded={serverDropdownOpen} aria-label="Server menu">
-			<span class="server-name">{getActiveServer()?.name ?? 'virc'}</span>
+			<span class="server-name">{getActiveServer()?.name ?? 'accord'}</span>
 			<svg class="server-chevron" class:open={serverDropdownOpen} width="12" height="12" viewBox="0 0 12 12">
 				<path d="M3 4.5l3 3 3-3" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" />
 			</svg>

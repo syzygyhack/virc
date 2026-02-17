@@ -352,7 +352,7 @@
 			audioOutputDevices = devices.filter(d => d.kind === 'audiooutput');
 			videoInputDevices = devices.filter(d => d.kind === 'videoinput');
 		} catch (err) {
-			console.error('[virc] Device enumeration failed:', err);
+			console.error('[accord] Device enumeration failed:', err);
 		}
 	}
 
@@ -444,7 +444,7 @@
 			}
 			updateLevel();
 		} catch (err) {
-			console.error('[virc] Mic test failed:', err);
+			console.error('[accord] Mic test failed:', err);
 			stopMicTest();
 			if (err instanceof DOMException && err.name === 'NotAllowedError') {
 				micTestError = 'Microphone access denied. Check your system permissions.';
@@ -871,7 +871,7 @@
 				{:else if activeTab === 'appearance'}
 					<div class="settings-section">
 						<h3 class="section-title">Theme</h3>
-						<p class="setting-hint">Choose how virc looks. Your theme is the base; server themes layer on top.</p>
+						<p class="setting-hint">Choose how accord looks. Your theme is the base; server themes layer on top.</p>
 						<div class="theme-options">
 							{#each themeOptions as opt (opt.value)}
 								<button
@@ -1054,7 +1054,7 @@
 				</div>
 			{:else if activeTab === 'about'}
 					<div class="about-section">
-						<div class="about-logo">virc</div>
+						<div class="about-logo">accord</div>
 						<div class="about-version">Version 0.1.0</div>
 						<div class="about-desc">A modern, Discord-like chat client built on IRC.</div>
 						<div class="about-stack">

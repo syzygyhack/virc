@@ -365,8 +365,8 @@ describe('PING/PONG keepalive', () => {
 		expect(handlers).toHaveLength(1);
 
 		// Server sends PING
-		handlers[0]('PING :virc.local');
-		expect(conn.send).toHaveBeenCalledWith('PONG :virc.local');
+		handlers[0]('PING :accord.local');
+		expect(conn.send).toHaveBeenCalledWith('PONG :accord.local');
 	});
 
 	it('responds to PING with timestamp token', () => {
@@ -827,7 +827,7 @@ describe('self-PART handling', () => {
 	});
 
 	it('switches active channel on self-PART when active channel is parted', () => {
-		// Categories are static (from virc.json) and not modified by PART.
+		// Categories are static (from accord.json) and not modified by PART.
 		// The handler picks textChannels[0] as the fallback, so list #other first.
 		setCategories([{ name: 'Text', channels: ['#other', '#test'] }]);
 		handle(':me!a@host JOIN #test me :Me');

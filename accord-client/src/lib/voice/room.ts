@@ -216,7 +216,7 @@ export async function toggleVideo(room: Room): Promise<void> {
 		});
 	} catch (e) {
 		// Permission denied or device error — don't change state
-		console.error('[virc] Camera toggle failed:', e);
+		console.error('[accord] Camera toggle failed:', e);
 	}
 }
 
@@ -235,7 +235,7 @@ export async function toggleScreenShare(room: Room): Promise<void> {
 		});
 	} catch (e) {
 		// User cancelled screen picker or permission denied — don't change state
-		console.error('[virc] Screen share toggle failed:', e);
+		console.error('[accord] Screen share toggle failed:', e);
 	}
 }
 

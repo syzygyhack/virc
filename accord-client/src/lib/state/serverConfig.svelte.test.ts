@@ -4,7 +4,7 @@ import {
 	setServerConfig,
 	resetServerConfig,
 	getRoleColor,
-	type VircConfig,
+	type AccordConfig,
 } from './serverConfig.svelte';
 
 describe('serverConfig state', () => {
@@ -17,7 +17,7 @@ describe('serverConfig state', () => {
 	});
 
 	it('stores config via setServerConfig', () => {
-		const config: VircConfig = {
+		const config: AccordConfig = {
 			name: 'Test Server',
 			description: 'A test server',
 		};
@@ -25,8 +25,8 @@ describe('serverConfig state', () => {
 		expect(serverConfig.config).toEqual(config);
 	});
 
-	it('exposes all VircConfig fields', () => {
-		const config: VircConfig = {
+	it('exposes all AccordConfig fields', () => {
+		const config: AccordConfig = {
 			name: 'My Community',
 			icon: '/assets/icon.png',
 			description: 'Welcome to my community',
@@ -59,8 +59,8 @@ describe('serverConfig state', () => {
 		expect(serverConfig.config?.description).toBe('Updated');
 	});
 
-	it('stores readonly category flag from virc.json', () => {
-		const config: VircConfig = {
+	it('stores readonly category flag from accord.json', () => {
+		const config: AccordConfig = {
 			name: 'Info Server',
 			channels: {
 				categories: [
@@ -76,8 +76,8 @@ describe('serverConfig state', () => {
 		expect(cats?.[1].readonly).toBe(true);
 	});
 
-	it('stores roles field from virc.json', () => {
-		const config: VircConfig = {
+	it('stores roles field from accord.json', () => {
+		const config: AccordConfig = {
 			name: 'Roles Server',
 			roles: {
 				'~': { name: 'Owner', color: '#e0a040' },
@@ -93,7 +93,7 @@ describe('serverConfig state', () => {
 	});
 
 	it('stores theme field with accent and surfaces', () => {
-		const config: VircConfig = {
+		const config: AccordConfig = {
 			name: 'Themed Server',
 			theme: {
 				accent: '#e05050',
@@ -113,7 +113,7 @@ describe('serverConfig state', () => {
 	});
 
 	it('stores theme with accent only', () => {
-		const config: VircConfig = {
+		const config: AccordConfig = {
 			name: 'Accent Server',
 			theme: { accent: '#ff6600' },
 		};
@@ -123,7 +123,7 @@ describe('serverConfig state', () => {
 	});
 
 	it('config without theme has undefined theme', () => {
-		const config: VircConfig = { name: 'No Theme' };
+		const config: AccordConfig = { name: 'No Theme' };
 		setServerConfig(config);
 		expect(serverConfig.config?.theme).toBeUndefined();
 	});
@@ -158,7 +158,7 @@ describe('getRoleColor', () => {
 		expect(getRoleColor('?')).toBeNull();
 	});
 
-	it('uses virc.json roles when config is set', () => {
+	it('uses accord.json roles when config is set', () => {
 		setServerConfig({
 			name: 'Custom',
 			roles: {
@@ -172,7 +172,7 @@ describe('getRoleColor', () => {
 		expect(getRoleColor('+')).toBe('#0000ff');
 	});
 
-	it('returns null when virc.json role has null color', () => {
+	it('returns null when accord.json role has null color', () => {
 		setServerConfig({
 			name: 'Custom',
 			roles: {
@@ -182,7 +182,7 @@ describe('getRoleColor', () => {
 		expect(getRoleColor('@')).toBeNull();
 	});
 
-	it('returns null for mode not in virc.json roles', () => {
+	it('returns null for mode not in accord.json roles', () => {
 		setServerConfig({
 			name: 'Custom',
 			roles: {

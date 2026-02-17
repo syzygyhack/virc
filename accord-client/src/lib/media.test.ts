@@ -103,21 +103,21 @@ describe('extractMediaUrls', () => {
 		]);
 	});
 
-	it('detects virc file API URLs as images', () => {
+	it('detects accord file API URLs as images', () => {
 		const result = extractMediaUrls('https://files.example.com/api/files/abc123.png');
 		expect(result).toEqual([
 			{ url: 'https://files.example.com/api/files/abc123.png', type: 'image' },
 		]);
 	});
 
-	it('detects virc file API URLs as video', () => {
+	it('detects accord file API URLs as video', () => {
 		const result = extractMediaUrls('https://files.example.com/api/files/abc123.mp4');
 		expect(result).toEqual([
 			{ url: 'https://files.example.com/api/files/abc123.mp4', type: 'video' },
 		]);
 	});
 
-	it('detects virc file API URLs as audio', () => {
+	it('detects accord file API URLs as audio', () => {
 		const result = extractMediaUrls('https://files.example.com/api/files/abc123.mp3');
 		expect(result).toEqual([
 			{ url: 'https://files.example.com/api/files/abc123.mp3', type: 'audio' },

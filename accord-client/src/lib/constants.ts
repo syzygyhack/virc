@@ -14,7 +14,7 @@ export interface RoleDef {
 /**
  * Default role definitions matching accord-files/src/routes/config.ts.
  *
- * Used for display names and fallback colors. When virc.json is loaded,
+ * Used for display names and fallback colors. When accord.json is loaded,
  * server-specific overrides take precedence via serverConfig.
  */
 export const DEFAULT_ROLES: Record<string, RoleDef> = {

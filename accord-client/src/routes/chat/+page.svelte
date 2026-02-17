@@ -65,8 +65,8 @@
 	import { setServerConfig, resetServerConfig } from '$lib/state/serverConfig.svelte';
 	import { setCustomEmoji, clearCustomEmoji } from '$lib/emoji';
 
-	/** virc.json config shape (subset we consume). */
-	interface VircConfig {
+	/** accord.json config shape (subset we consume). */
+	interface AccordConfig {
 		name?: string;
 		icon?: string;
 		filesUrl?: string;
@@ -527,26 +527,26 @@
 	}
 
 	/**
-	* Fetch virc.json from the files server.
+	* Fetch accord.json from the files server.
 	* Returns parsed config or null on failure.
 	*/
-	async function fetchVircConfig(filesUrl: string): Promise<VircConfig | null> {
+	async function fetchAccordConfig(filesUrl: string): Promise<AccordConfig | null> {
 		try {
 			const token = getToken();
 			const headers: Record<string, string> = {};
 			if (token) {
 				headers['Authorization'] = `Bearer ${token}`;
 			}
-			const res = await fetch(`${filesUrl}/.well-known/virc.json`, { headers });
+			const res = await fetch(`${filesUrl}/.well-known/accord.json`, { headers });
 			if (!res.ok) return null;
-			return (await res.json()) as VircConfig;
+			return (await res.json()) as AccordConfig;
 		} catch {
 			return null;
 		}
 	}
 
 	/**
-	* Connect to IRC, authenticate, fetch virc.json, populate state,
+	* Connect to IRC, authenticate, fetch accord.json, populate state,
 	* and auto-join channels.
 	*/
 	async function initConnection(): Promise<void> {
@@ -605,8 +605,8 @@
 				}
 			}
 
-			// 5. Fetch virc.json
-			const config = filesUrl ? await fetchVircConfig(filesUrl) : null;
+			// 5. Fetch accord.json
+			const config = filesUrl ? await fetchAccordConfig(filesUrl) : null;
 
 			// 5b. Store config for ServerSettings modal
 			if (config) {
@@ -635,7 +635,7 @@
 				}
 			}
 
-			// 6b. Load custom emoji from virc.json
+			// 6b. Load custom emoji from accord.json
 			if (config?.emoji && typeof config.emoji === 'object') {
 				// Resolve relative emoji URLs against the files server
 				const resolved: Record<string, string> = {};
@@ -651,7 +651,7 @@
 				setCustomEmoji(resolved);
 			}
 
-			// 7. Populate categories from virc.json
+			// 7. Populate categories from accord.json
 			const categories = config?.channels?.categories ?? [
 				{ name: 'Channels', channels: ['#general'] },
 			];
@@ -1330,7 +1330,7 @@
 		const deviceId = audioSettings.inputDeviceId;
 		if (!voiceRoom) return;
 		voiceRoom.switchActiveDevice('audioinput', deviceId)
-			.catch((err) => console.error('[virc] Failed to switch input device:', err));
+			.catch((err) => console.error('[accord] Failed to switch input device:', err));
 	});
 
 	// Switch output device when changed in settings while connected.
@@ -1338,7 +1338,7 @@
 		const deviceId = audioSettings.outputDeviceId;
 		if (!voiceRoom) return;
 		voiceRoom.switchActiveDevice('audiooutput', deviceId)
-			.catch((err) => console.error('[virc] Failed to switch output device:', err));
+			.catch((err) => console.error('[accord] Failed to switch output device:', err));
 	});
 
 	// Switch video device when changed in settings while connected with camera on.
@@ -1346,7 +1346,7 @@
 		const deviceId = audioSettings.videoDeviceId;
 		if (!voiceRoom || !voiceState.localVideoEnabled) return;
 		voiceRoom.switchActiveDevice('videoinput', deviceId)
-			.catch((err) => console.error('[virc] Failed to switch video device:', err));
+			.catch((err) => console.error('[accord] Failed to switch video device:', err));
 	});
 
 	// Auto-open voice overlay when video tracks first appear (camera/screen share).

@@ -85,7 +85,7 @@ export function getActiveServer(): ServerInfo | null {
 	return serverState.servers.find((s) => s.id === serverState.activeServerId) ?? null;
 }
 
-/** Update server info (e.g. after fetching virc.json). */
+/** Update server info (e.g. after fetching accord.json). */
 export function updateServer(id: string, updates: Partial<Omit<ServerInfo, 'id'>>): void {
 	const server = serverState.servers.find((s) => s.id === id);
 	if (server) {

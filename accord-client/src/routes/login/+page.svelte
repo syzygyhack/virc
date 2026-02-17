@@ -341,7 +341,7 @@
 
 <div class="login-page">
 	<div class="login-card">
-		<h1 class="title">virc</h1>
+		<h1 class="title">accord</h1>
 		<p class="subtitle">
 			{mode === 'login' ? 'Sign in to your account' : 'Create a new account'}
 		</p>

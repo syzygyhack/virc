@@ -626,7 +626,7 @@
 				for (const staged of stagedFiles) {
 					const result = await uploadFile(staged.file, token, filesUrl);
 					// Build full URL from the server's relative path and the discovered filesUrl.
-					// filesUrl is derived from the WS connection URL (or virc.json override),
+					// filesUrl is derived from the WS connection URL (or accord.json override),
 					// so it already points to the correct public server address.
 					const fullUrl = `${filesUrl.replace(/\/+$/, '')}${result.url}`;
 					fileUrls.push(fullUrl);

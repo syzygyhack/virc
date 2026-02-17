@@ -25,7 +25,7 @@ export function deriveHttpUrl(wsUrl: string): string {
 /**
  * Discover the files API base URL from a WebSocket URL.
  *
- * Probes `/.well-known/virc.json` at the derived HTTP origin. If the
+ * Probes `/.well-known/accord.json` at the derived HTTP origin. If the
  * config includes an explicit `filesUrl`, that wins. Otherwise the
  * derived origin is used (same-origin assumption).
  *
@@ -36,7 +36,7 @@ export async function discoverFilesUrl(wsUrl: string): Promise<string | null> {
 	const httpBase = deriveHttpUrl(wsUrl);
 
 	try {
-		const res = await fetch(`${httpBase}/.well-known/virc.json`, {
+		const res = await fetch(`${httpBase}/.well-known/accord.json`, {
 			signal: AbortSignal.timeout(5000),
 		});
 		if (!res.ok) return null;

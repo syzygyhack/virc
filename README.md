@@ -514,13 +514,13 @@ Development continued as **human-agent collaboration** — the human directed pr
 
 | Metric | Value |
 |--------|-------|
-| TypeScript + Svelte source | ~25,200 lines |
+| TypeScript + Svelte source | ~25,250 lines |
 | Test code | ~9,900 lines |
 | Design specs | ~1,860 lines |
-| Infrastructure config | ~1,380 lines |
+| Infrastructure config | ~1,400 lines |
 | Components | 26 |
 | Reactive stores | 15 |
-| Commits | 103 |
+| Commits | 119 |
 | Packages | 2 |
 | Tests | 899 |
 | Cardinal tasks | 89 |

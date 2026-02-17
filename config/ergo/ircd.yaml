@@ -620,7 +620,7 @@ accounts:
         introspection-timeout: 10s
         # omit for auth method `none`; required for auth method `client_secret_basic`:
         client-id: "ergo"
-        client-secret: "4TA0I7mJ3fUUcW05KJiODg"
+        client-secret: "CHANGE-ME"
 
     # support for login via JWT bearer tokens
     jwt-auth:

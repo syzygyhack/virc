@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import type { IRCConnection } from '$lib/irc/connection';
-	import { join, chathistory, markread, tagmsg, redact, privmsg, topic, monitor, who, escapeTagValue } from '$lib/irc/commands';
+	import { join, chathistory, markread, topic } from '$lib/irc/commands';
+	import { updateMonitorForChannel, clearMonitoredNicks, addMonitoredNicks } from '$lib/channelMonitor';
 	import { stopTokenRefresh, clearCredentials, clearToken } from '$lib/api/auth';
 	import { disconnectVoice } from '$lib/voice/room';
 	import {
@@ -16,20 +17,42 @@
 	import { userState } from '$lib/state/user.svelte';
 	import {
 		channelUIState,
-		channelState,
 		getChannel,
 		setActiveChannel,
 		isDMTarget,
-		openDM,
 		clearChannelMembers as clearSimpleMembers,
 	} from '$lib/state/channels.svelte';
 	import { markRead } from '$lib/state/notifications.svelte';
 	import { getMember, clearChannel as clearRichMembers } from '$lib/state/members.svelte';
-	import { getCursors, getMessage, getMessages, redactMessage, addReaction, removeReaction, updateSendState, addMessage, pinMessage, unpinMessage, isPinned } from '$lib/state/messages.svelte';
-	import type { Message } from '$lib/state/messages.svelte';
+	import { getCursors } from '$lib/state/messages.svelte';
 	import { getActiveServer } from '$lib/state/servers.svelte';
 	import { initConnection } from '$lib/connection/lifecycle';
 	import { setupShortcuts } from '$lib/shortcuts';
+	import {
+		type ReplyContext,
+		type MessageActionState,
+		handleReply as _handleReply,
+		handleCancelReply as _handleCancelReply,
+		handleReact as _handleReact,
+		handleInputEmojiPicker as _handleInputEmojiPicker,
+		handleEmojiSelect as _handleEmojiSelect,
+		handleEmojiPickerClose as _handleEmojiPickerClose,
+		handleToggleReaction as _handleToggleReaction,
+		handleMore as _handleMore,
+		handlePin,
+		handleConfirmDelete as _handleConfirmDelete,
+		handleCancelDelete as _handleCancelDelete,
+		handleRetry as _handleRetry,
+		editLastMessage as _editLastMessage,
+		handleEditComplete as _handleEditComplete,
+		handleEditCancel as _handleEditCancel,
+		handleEditMessage as _handleEditMessage,
+		handleCopyText,
+		handleCopyLink,
+		handleMarkUnread as _handleMarkUnread,
+		handleScrollToMessage,
+		markActiveChannelRead as _markActiveChannelRead,
+	} from '$lib/messageActions';
 	import ChannelSidebar from '../../components/ChannelSidebar.svelte';
 	import HeaderBar from '../../components/HeaderBar.svelte';
 	import MessageList from '../../components/MessageList.svelte';
@@ -69,11 +92,6 @@
 	let sidebarIsOverlay = $derived(innerWidth <= 900);
 
 	// Reply state
-	interface ReplyContext {
-		msgid: string;
-		nick: string;
-		text: string;
-	}
 	let replyContext: ReplyContext | null = $state(null);
 
 	// Emoji picker state
@@ -112,59 +130,6 @@
 	// Rate limit state
 	let rateLimitSeconds = $state(0);
 	let rateLimitTimer: ReturnType<typeof setInterval> | null = null;
-
-	// MONITOR tracking: nicks currently being monitored for presence
-	let monitoredNicks = new Set<string>();
-
-	/**
-	* Update MONITOR list for the given channel.
-	* Adds nicks in the active channel, prunes nicks not in any joined channel
-	* or DM list. Also sends WHO to get initial away status.
-	*/
-	function updateMonitorForChannel(channel: string): void {
-		if (!conn) return;
-		// DM targets are monitored individually, not via channel membership
-		if (isDMTarget(channel)) return;
-
-		const chInfo = getChannel(channel);
-		if (!chInfo) return;
-
-		const currentNicks = new Set(chInfo.members.keys());
-		// Remove own nick from monitoring
-		const ownNick = userState.nick;
-		if (ownNick) currentNicks.delete(ownNick);
-
-		// Build the full set of nicks that should be monitored:
-		// all nicks in any joined channel + DM partners
-		const allNeeded = new Set<string>();
-		for (const [chName, chData] of channelState.channels) {
-			if (chName.startsWith('#') || chName.startsWith('&')) {
-				for (const nick of chData.members.keys()) {
-					if (nick !== ownNick) allNeeded.add(nick);
-				}
-			}
-		}
-		for (const dm of channelUIState.dmConversations) {
-			allNeeded.add(dm.nick);
-		}
-
-		// Add nicks from active channel not yet monitored
-		const toAdd = [...currentNicks].filter((n) => !monitoredNicks.has(n));
-		// Remove monitored nicks not needed by any channel or DM
-		const toRemove = [...monitoredNicks].filter((n) => !allNeeded.has(n));
-
-		if (toRemove.length > 0) {
-			monitor(conn, '-', toRemove);
-			for (const n of toRemove) monitoredNicks.delete(n);
-		}
-		if (toAdd.length > 0) {
-			monitor(conn, '+', toAdd);
-			for (const n of toAdd) monitoredNicks.add(n);
-		}
-
-		// Send WHO to get initial away status for the channel
-		who(conn, channel);
-	}
 
 	// Derived: is the active channel a DM?
 	let isActiveDM = $derived(
@@ -218,7 +183,7 @@
 		}
 
 		// Update MONITOR list for presence tracking in the new channel
-		updateMonitorForChannel(channel);
+		updateMonitorForChannel(conn, channel);
 
 		// Clear reply/emoji/edit/popout state on channel switch
 		replyContext = null;
@@ -250,7 +215,7 @@
 		}
 		if (monitoredAfterNames === channel) return; // Already ran for this channel
 		monitoredAfterNames = channel;
-		updateMonitorForChannel(channel);
+		updateMonitorForChannel(conn, channel);
 	});
 
 	/**
@@ -300,136 +265,43 @@
 		chathistory(conn, 'BEFORE', target, `msgid=${beforeMsgid}`, '50');
 	}
 
-	/** Reply button clicked on a message. */
-	function handleReply(msgid: string): void {
-		const channel = channelUIState.activeChannel;
-		if (!channel) return;
-		const msg = getMessage(channel, msgid);
-		if (!msg) return;
-		replyContext = {
-			msgid: msg.msgid,
-			nick: msg.nick,
-			text: msg.text,
-		};
-	}
+	// ---------------------------------------------------------------------------
+	// Message action state bridge — connects extracted handlers to local state
+	// ---------------------------------------------------------------------------
+	const actionState: MessageActionState = {
+		getConn: () => conn,
+		getReplyContext: () => replyContext,
+		setReplyContext: (ctx) => { replyContext = ctx; },
+		getEmojiPickerTarget: () => emojiPickerTarget,
+		setEmojiPickerTarget: (t) => { emojiPickerTarget = t; },
+		getEmojiPickerPosition: () => emojiPickerPosition,
+		setEmojiPickerPosition: (p) => { emojiPickerPosition = p; },
+		getDeleteTarget: () => deleteTarget,
+		setDeleteTarget: (t) => { deleteTarget = t; },
+		getEditingMsgid: () => editingMsgid,
+		setEditingMsgid: (id) => { editingMsgid = id; },
+		getEditingChannel: () => editingChannel,
+		setEditingChannel: (ch) => { editingChannel = ch; },
+	};
 
-	function handleCancelReply(): void {
-		replyContext = null;
-	}
-
-	/** React button clicked on a message — open emoji picker.
-	 *  If anchor coordinates are provided (from the reaction bar '+' button),
-	 *  position the picker near the anchor. Otherwise center it on screen.
-	 */
-	function handleReact(msgid: string, anchor?: { x: number; y: number }): void {
-		emojiPickerTarget = msgid;
-		if (anchor) {
-			// Position picker above the anchor point, clamped to viewport
-			const pickerWidth = 352;
-			const pickerHeight = 400;
-			emojiPickerPosition = {
-				x: Math.max(16, Math.min(anchor.x, window.innerWidth - pickerWidth - 16)),
-				y: Math.max(16, anchor.y - pickerHeight - 8),
-			};
-		} else {
-			emojiPickerPosition = {
-				x: Math.max(16, window.innerWidth / 2 - 176),
-				y: Math.max(16, window.innerHeight / 2 - 200),
-			};
-		}
-	}
-
-	/** Open emoji picker for inserting into the message input. */
-	function handleInputEmojiPicker(): void {
-		emojiPickerTarget = '_input_';
-		emojiPickerPosition = {
-			x: Math.max(16, window.innerWidth / 2 - 176),
-			y: Math.max(16, window.innerHeight / 2 - 200),
-		};
-	}
-
-	/** Emoji selected from picker — either insert into input or send reaction TAGMSG. */
-	function handleEmojiSelect(emoji: string): void {
-		if (emojiPickerTarget === '_input_') {
-			// Insert emoji into message input by dispatching a custom event
-			window.dispatchEvent(new CustomEvent('accord:insert-emoji', { detail: { emoji } }));
-			emojiPickerTarget = null;
-			emojiPickerPosition = null;
-			return;
-		}
-		if (!conn || !emojiPickerTarget || !channelUIState.activeChannel) return;
-		tagmsg(conn, channelUIState.activeChannel, {
-			'+draft/react': emoji,
-			'+draft/reply': emojiPickerTarget,
-		});
-		emojiPickerTarget = null;
-		emojiPickerPosition = null;
-	}
-
-	function handleEmojiPickerClose(): void {
-		emojiPickerTarget = null;
-		emojiPickerPosition = null;
-	}
-
-	/** Toggle a reaction on a message (click existing reaction pill). */
-	function handleToggleReaction(msgid: string, emoji: string): void {
-		if (!conn || !channelUIState.activeChannel) return;
-		const channel = channelUIState.activeChannel;
-
-		// Send the reaction toggle via TAGMSG
-		tagmsg(conn, channel, {
-			'+draft/react': emoji,
-			'+draft/reply': msgid,
-		});
-	}
-
-	/** More menu clicked — offer delete. */
-	function handleMore(msgid: string, _event: MouseEvent): void {
-		if (!channelUIState.activeChannel) return;
-		deleteTarget = { msgid, channel: channelUIState.activeChannel };
-	}
-
-	/** Pin/unpin a message in the active channel. */
-	function handlePin(msgid: string): void {
-		const channel = channelUIState.activeChannel;
-		if (!channel) return;
-		if (isPinned(channel, msgid)) {
-			unpinMessage(channel, msgid);
-		} else {
-			pinMessage(channel, msgid);
-		}
-	}
-
-	/** Confirm message deletion — send REDACT. */
-	function handleConfirmDelete(): void {
-		if (!conn || !deleteTarget) return;
-		redact(conn, deleteTarget.channel, deleteTarget.msgid);
-		redactMessage(deleteTarget.channel, deleteTarget.msgid);
-		deleteTarget = null;
-	}
-
-	function handleCancelDelete(): void {
-		deleteTarget = null;
-	}
-
-	/** Retry sending a failed message. */
-	function handleRetry(msgid: string): void {
-		const channel = channelUIState.activeChannel;
-		if (!channel || !conn) return;
-		const msg = getMessage(channel, msgid);
-		if (!msg || msg.sendState !== 'failed') return;
-
-		updateSendState(channel, msgid, 'sending');
-		let sent: boolean;
-		if (msg.replyTo) {
-			// Re-emit with the original reply context
-			const tags = `@+draft/reply=${escapeTagValue(msg.replyTo)}`;
-			sent = conn.send(`${tags} PRIVMSG ${channel} :${msg.text}`);
-		} else {
-			sent = privmsg(conn, channel, msg.text);
-		}
-		updateSendState(channel, msgid, sent ? 'sent' : 'failed');
-	}
+	// Bound message action handlers (delegate to extracted module)
+	const handleReply = (msgid: string) => _handleReply(actionState, msgid);
+	const handleCancelReply = () => _handleCancelReply(actionState);
+	const handleReact = (msgid: string, anchor?: { x: number; y: number }) => _handleReact(actionState, msgid, anchor);
+	const handleInputEmojiPicker = () => _handleInputEmojiPicker(actionState);
+	const handleEmojiSelect = (emoji: string) => _handleEmojiSelect(actionState, emoji);
+	const handleEmojiPickerClose = () => _handleEmojiPickerClose(actionState);
+	const handleToggleReaction = (msgid: string, emoji: string) => _handleToggleReaction(actionState, msgid, emoji);
+	const handleMore = (msgid: string, event: MouseEvent) => _handleMore(actionState, msgid, event);
+	const handleConfirmDelete = () => _handleConfirmDelete(actionState);
+	const handleCancelDelete = () => _handleCancelDelete(actionState);
+	const handleRetry = (msgid: string) => _handleRetry(actionState, msgid);
+	const editLastMessage = () => _editLastMessage(actionState);
+	const handleEditComplete = () => _handleEditComplete(actionState);
+	const handleEditCancel = () => _handleEditCancel(actionState);
+	const handleEditMessage = (msgid: string) => _handleEditMessage(actionState, msgid);
+	const handleMarkUnread = (msgid: string) => _handleMarkUnread(actionState, msgid);
+	const markActiveChannelRead = () => _markActiveChannelRead(conn);
 
 	/** Clear both simple and rich member lists for a channel (for reconnect). */
 	function clearChannelMembers(channel: string): void {
@@ -514,12 +386,8 @@
 				welcomeConfig = config;
 			},
 			clearChannelMembers,
-			clearMonitoredNicks() {
-				monitoredNicks.clear();
-			},
-			addMonitoredNicks(nicks) {
-				for (const n of nicks) monitoredNicks.add(n);
-			},
+			clearMonitoredNicks,
+			addMonitoredNicks,
 			async handleVoiceReconnect() {
 				if (voiceState.currentRoom && voiceRoom) {
 					const voiceChannel = voiceState.currentRoom;
@@ -532,21 +400,8 @@
 					}
 				}
 			},
-			updateMonitorForChannel,
+			updateMonitorForChannel: (channel) => updateMonitorForChannel(conn, channel),
 		});
-	}
-
-	/** Mark the active channel as read and sync via MARKREAD. */
-	function markActiveChannelRead(): void {
-		const channel = channelUIState.activeChannel;
-		if (!channel) return;
-		const cursors = getCursors(channel);
-		if (cursors.newestMsgid) {
-			markRead(channel, cursors.newestMsgid);
-		}
-		if (conn) {
-			markread(conn, channel, new Date().toISOString());
-		}
 	}
 
 	/** Scroll the message list by dispatching a custom event. */
@@ -557,99 +412,6 @@
 	// Track the msgid and channel being edited — redaction deferred until user confirms send
 	let editingMsgid: string | null = $state(null);
 	let editingChannel: string | null = $state(null);
-
-	/**
-	* "Edit" the last message by the current user:
-	* Populates the input with the message text. The original message is only
-	* redacted when the user actually sends the edited text (or discarded if
-	* the user cancels / clears the input).
-	*/
-	function editLastMessage(): void {
-		const channel = channelUIState.activeChannel;
-		if (!channel) return;
-		const nick = userState.nick;
-		if (!nick) return;
-
-		const msgs = getMessages(channel);
-		// Find the last non-redacted privmsg by the current user
-		for (let i = msgs.length - 1; i >= 0; i--) {
-			const m = msgs[i];
-			if (m.nick === nick && m.type === 'privmsg' && !m.isRedacted) {
-				// Store the msgid and channel for deferred redaction on send
-				editingMsgid = m.msgid;
-				editingChannel = channel;
-				// Set the input textarea value by dispatching a custom event
-				// The MessageInput component will pick this up
-				window.dispatchEvent(
-					new CustomEvent('accord:edit-message', { detail: { text: m.text } })
-				);
-				return;
-			}
-		}
-	}
-
-	/** Called by MessageInput after a successful send while editing. */
-	function handleEditComplete(): void {
-		// The edit is handled entirely by the +accord/edit tag on the PRIVMSG.
-		// The server echoes it back, and handlePrivmsg updates the message in-place
-		// via updateMessageText(). No REDACT needed — that would hide the message.
-		editingMsgid = null;
-		editingChannel = null;
-	}
-
-	/** Called when the user cancels editing (Escape or clearing input). */
-	function handleEditCancel(): void {
-		editingMsgid = null;
-		editingChannel = null;
-	}
-
-	/** Edit a specific message by msgid (from More menu). */
-	function handleEditMessage(msgid: string): void {
-		const channel = channelUIState.activeChannel;
-		if (!channel) return;
-		const msg = getMessage(channel, msgid);
-		if (!msg || msg.isRedacted) return;
-
-		editingMsgid = msg.msgid;
-		editingChannel = channel;
-		window.dispatchEvent(
-			new CustomEvent('accord:edit-message', { detail: { text: msg.text } })
-		);
-	}
-
-	/** Copy message text to clipboard. */
-	function handleCopyText(text: string): void {
-		navigator.clipboard.writeText(text).catch(() => {
-			// Fallback: ignore clipboard errors silently
-		});
-	}
-
-	/** Copy a permalink-style reference to clipboard. */
-	function handleCopyLink(msgid: string): void {
-		const channel = channelUIState.activeChannel;
-		if (!channel) return;
-		const server = getActiveServer();
-		const serverName = server?.name ?? 'irc';
-		const link = `${serverName}/${channel}/${msgid}`;
-		navigator.clipboard.writeText(link).catch(() => {});
-	}
-
-	/** Set read marker to a specific message (Mark Unread). */
-	function handleMarkUnread(msgid: string): void {
-		const channel = channelUIState.activeChannel;
-		if (!channel || !conn) return;
-		const msg = getMessage(channel, msgid);
-		if (!msg) return;
-		// Set read marker to this message's timestamp via MARKREAD
-		markread(conn, channel, msg.time.toISOString());
-	}
-
-	/** Scroll to a specific message in the message list (used by pinned messages). */
-	function handleScrollToMessage(msgid: string): void {
-		window.dispatchEvent(
-			new CustomEvent('accord:scroll-to-message', { detail: { msgid } })
-		);
-	}
 
 	/** Send a TOPIC command when the user edits the channel topic. */
 	function handleTopicEdit(channel: string, newTopic: string): void {

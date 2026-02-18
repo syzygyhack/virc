@@ -51,7 +51,7 @@ Full project rename completed. ~200 locations across source, config, tests, and 
 - [x] `accord-files/.dockerignore` created
 
 ### ~~Fix README drift~~ (DONE)
-- [x] Test count: 899 (744 client + 155 server)
+- [x] Test count: 981 (790 client + 191 server)
 - [x] Component count: 28
 - [x] Updated "By the Numbers" table
 
@@ -79,7 +79,7 @@ Full project rename completed. ~200 locations across source, config, tests, and 
 - [ ] Add typed event map to IRC connection to replace `any` listener types
 - [x] ~~Fix double DNS resolution in preview.ts~~ — resolved via `resolvePinnedUrl()` DNS pinning
 - [x] ~~Add SSR guard (`hasLocalStorage()`) to all bare `localStorage` calls~~ — unified across all state modules, auth, and keybindings
-- [ ] Store `voiceError` auto-dismiss timer refs to prevent premature clearing
+- [x] ~~Store `voiceError` auto-dismiss timer refs to prevent premature clearing~~ — `voiceErrorTimer` with cleanup in +page.svelte
 
 ---
 

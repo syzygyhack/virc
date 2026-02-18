@@ -11,6 +11,10 @@ accountInfo.get("/api/account-info", authMiddleware, async (c) => {
     return c.json({ error: "Missing required account parameter" }, 400);
   }
 
+  if (account.length > 200) {
+    return c.json({ error: "Account parameter too long" }, 400);
+  }
+
   // Proxy to Ergo /v1/ns/info
   let ergoRes: Response;
   try {

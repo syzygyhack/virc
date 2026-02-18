@@ -376,6 +376,34 @@
 		tick().then(measureRenderedItems);
 	});
 
+	/**
+	 * ResizeObserver on the items container: re-measures heights when children
+	 * resize (e.g. images loading, embeds expanding, preview cards rendering).
+	 * Without this, stale measured heights cause scroll jumps in the virtualizer.
+	 */
+	let resizeObserver: ResizeObserver | undefined;
+
+	$effect(() => {
+		const container = itemsContainer;
+		// Re-run when visible entries change so we observe new children
+		void visibleEntries;
+		if (!container) return;
+
+		resizeObserver?.disconnect();
+		resizeObserver = new ResizeObserver(() => {
+			measureRenderedItems();
+		});
+
+		for (const child of container.children) {
+			resizeObserver.observe(child);
+		}
+
+		return () => {
+			resizeObserver?.disconnect();
+			resizeObserver = undefined;
+		};
+	});
+
 	function toggleCollapsedGroup(key: string): void {
 		if (expandedGroups.has(key)) {
 			expandedGroups.delete(key);

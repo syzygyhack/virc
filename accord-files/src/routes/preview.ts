@@ -270,12 +270,18 @@ function parseOgTags(html: string): Omit<OgMetadata, "url"> {
 }
 
 /**
- * Resolve hostname to a public IP and return a URL that fetches via that IP.
- * This prevents TOCTOU DNS rebinding: we resolve once and pin the IP for the
- * actual fetch, while preserving the original Host header for HTTP routing.
+ * Resolve hostname via DNS, validate all IPs are public, and return
+ * the URL to fetch along with the Host header value.
  *
- * Returns { fetchUrl, hostHeader } where fetchUrl uses the resolved IP and
- * hostHeader is the original hostname to send as the Host header.
+ * For HTTP URLs, we pin the resolved IP into the URL to prevent TOCTOU
+ * DNS rebinding (the Host header preserves the original hostname for routing).
+ *
+ * For HTTPS URLs, we validate DNS results but fetch using the original
+ * hostname. IP pinning breaks TLS because SNI must match the certificate's
+ * CN/SAN, and most certificates are issued for domain names, not IPs.
+ * The TOCTOU window between DNS validation and connect() is minimal (ms),
+ * and an attacker would need to control DNS TTL and race the rebind within
+ * that window — an acceptable residual risk for a link-preview system.
  */
 async function resolvePinnedUrl(parsed: URL): Promise<{ fetchUrl: string; hostHeader: string }> {
   const hostname = parsed.hostname;
@@ -289,19 +295,23 @@ async function resolvePinnedUrl(parsed: URL): Promise<{ fetchUrl: string; hostHe
     return { fetchUrl: parsed.href, hostHeader };
   }
 
-  // Resolve, validate all IPs are public, and reuse the results to pin.
-  // Single DNS lookup prevents TOCTOU rebinding and avoids duplicate resolution.
+  // Resolve, validate all IPs are public.
   const { v4: v4Addrs, v6: v6Addrs } = await assertPublicResolution(hostname);
 
+  // For HTTPS, keep the original hostname so TLS SNI matches the certificate.
+  // DNS results were validated above — the tiny TOCTOU window is acceptable.
+  if (parsed.protocol === "https:") {
+    return { fetchUrl: parsed.href, hostHeader };
+  }
+
+  // For HTTP, pin the resolved IP to eliminate the TOCTOU window entirely.
   if (v4Addrs.length > 0) {
-    // Pin to the first resolved IPv4 address
     const pinnedUrl = new URL(parsed.href);
     pinnedUrl.hostname = v4Addrs[0];
     return { fetchUrl: pinnedUrl.href, hostHeader };
   }
 
   if (v6Addrs.length > 0) {
-    // Pin to the first resolved IPv6 address (bracket notation for URL)
     const pinnedUrl = new URL(parsed.href);
     pinnedUrl.hostname = `[${v6Addrs[0]}]`;
     return { fetchUrl: pinnedUrl.href, hostHeader };

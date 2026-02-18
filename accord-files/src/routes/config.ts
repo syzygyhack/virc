@@ -100,12 +100,17 @@ async function loadConfig(): Promise<ConfigCache> {
   try {
     await stat(configPath); // check existence before reading
     const raw = await readFile(configPath, "utf-8");
-    const parsed = JSON.parse(raw);
-    const etag = computeEtag(raw);
-    cache = { config: parsed, etag, loadedAt: Date.now(), source: "file" };
-    return cache;
+    try {
+      const parsed = JSON.parse(raw);
+      const etag = computeEtag(raw);
+      cache = { config: parsed, etag, loadedAt: Date.now(), source: "file" };
+      return cache;
+    } catch {
+      // File exists but contains invalid JSON — warn and fall through to defaults
+      console.warn(`[accord] ${configPath} contains invalid JSON, falling back to generated config`);
+    }
   } catch {
-    // File doesn't exist or isn't valid JSON — generate default
+    // File doesn't exist — fall through to generated default (not an error)
   }
 
   const serverName = await fetchServerName();

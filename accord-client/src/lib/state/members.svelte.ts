@@ -11,6 +11,14 @@
 
 import { MODE_ORDER } from '$lib/constants';
 
+/**
+ * Normalize a channel/nick for use as a Map key.
+ * IRC channels and nicks are case-insensitive.
+ */
+function normalize(key: string): string {
+	return key.toLowerCase();
+}
+
 export interface Member {
 	nick: string;
 	account: string;
@@ -43,42 +51,44 @@ function computeHighestMode(modes: string[]): string | null {
 }
 
 function ensureChannel(channel: string): Map<string, Member> {
-	if (!_channels.has(channel)) {
-		_channels.set(channel, new Map());
+	const key = normalize(channel);
+	if (!_channels.has(key)) {
+		_channels.set(key, new Map());
 	}
-	return _channels.get(channel)!;
+	return _channels.get(key)!;
 }
 
 /** Set the full member list for a channel (from NAMES/WHO response). */
 export function setMembers(channel: string, members: Member[]): void {
 	const map = new Map<string, Member>();
 	for (const m of members) {
-		map.set(m.nick, m);
+		map.set(normalize(m.nick), m);
 	}
-	_channels.set(channel, map);
+	_channels.set(normalize(channel), map);
 	notify();
 }
 
 /** Add a member to a channel (on JOIN). Overwrites if nick already exists. */
 export function addMember(channel: string, member: Member): void {
 	const map = ensureChannel(channel);
-	map.set(member.nick, member);
+	map.set(normalize(member.nick), member);
 	notify();
 }
 
 /** Remove a member from a channel (on PART). */
 export function removeMember(channel: string, nick: string): void {
-	const map = _channels.get(channel);
+	const map = _channels.get(normalize(channel));
 	if (map) {
-		map.delete(nick);
+		map.delete(normalize(nick));
 		notify();
 	}
 }
 
 /** Remove a member from all channels (on QUIT). */
 export function removeMemberFromAll(nick: string): void {
+	const key = normalize(nick);
 	for (const map of _channels.values()) {
-		map.delete(nick);
+		map.delete(key);
 	}
 	notify();
 }
@@ -106,8 +116,9 @@ export function updatePresence(nick: string, isAway: boolean, reason?: string): 
 		}
 	}
 
+	const key = normalize(nick);
 	for (const map of _channels.values()) {
-		const member = map.get(nick);
+		const member = map.get(key);
 		if (member) {
 			member.isAway = isAway;
 			member.awayReason = awayReason;
@@ -117,11 +128,23 @@ export function updatePresence(nick: string, isAway: boolean, reason?: string): 
 	notify();
 }
 
+/** Update account name for a nick across all channels (ACCOUNT notify). */
+export function updateMemberAccount(nick: string, account: string): void {
+	const key = normalize(nick);
+	for (const map of _channels.values()) {
+		const member = map.get(key);
+		if (member) {
+			member.account = account;
+		}
+	}
+	notify();
+}
+
 /** Update modes for a member in a specific channel. Recalculates highestMode. */
 export function updateMemberModes(channel: string, nick: string, modes: string[]): void {
-	const map = _channels.get(channel);
+	const map = _channels.get(normalize(channel));
 	if (!map) return;
-	const member = map.get(nick);
+	const member = map.get(normalize(nick));
 	if (!member) return;
 	member.modes = modes;
 	member.highestMode = computeHighestMode(modes);
@@ -131,9 +154,9 @@ export function updateMemberModes(channel: string, nick: string, modes: string[]
 /** Get a single member by nick in a channel, or null. */
 export function getMember(channel: string, nick: string): Member | null {
 	void _version;
-	const map = _channels.get(channel);
+	const map = _channels.get(normalize(channel));
 	if (!map) return null;
-	return map.get(nick) ?? null;
+	return map.get(normalize(nick)) ?? null;
 }
 
 /**
@@ -142,7 +165,7 @@ export function getMember(channel: string, nick: string): Member | null {
  */
 export function getMembers(channel: string): Member[] {
 	void _version;
-	const map = _channels.get(channel);
+	const map = _channels.get(normalize(channel));
 	if (!map) return [];
 
 	const members = Array.from(map.values());
@@ -162,7 +185,7 @@ export function getMembers(channel: string): Member[] {
  */
 export function getMembersByRole(channel: string): Map<string, Member[]> {
 	void _version;
-	const map = _channels.get(channel);
+	const map = _channels.get(normalize(channel));
 	if (!map) return new Map();
 
 	const grouped = new Map<string, Member[]>();
@@ -191,8 +214,9 @@ function modeRank(mode: string | null): number {
 
 /** Set a member's presence to 'offline' across all channels. */
 export function setPresenceOffline(nick: string): void {
+	const key = normalize(nick);
 	for (const map of _channels.values()) {
-		const member = map.get(nick);
+		const member = map.get(key);
 		if (member) {
 			member.presence = 'offline';
 		}
@@ -202,12 +226,14 @@ export function setPresenceOffline(nick: string): void {
 
 /** Rename a member across all channels (used for NICK). */
 export function renameMember(oldNick: string, newNick: string): void {
+	const oldKey = normalize(oldNick);
+	const newKey = normalize(newNick);
 	for (const map of _channels.values()) {
-		const member = map.get(oldNick);
+		const member = map.get(oldKey);
 		if (member) {
-			map.delete(oldNick);
+			map.delete(oldKey);
 			member.nick = newNick;
-			map.set(newNick, member);
+			map.set(newKey, member);
 		}
 	}
 	notify();
@@ -215,7 +241,7 @@ export function renameMember(oldNick: string, newNick: string): void {
 
 /** Clear all members from a specific channel (for reconnect). */
 export function clearChannel(channel: string): void {
-	const map = _channels.get(channel);
+	const map = _channels.get(normalize(channel));
 	if (map) {
 		map.clear();
 		notify();

@@ -21,26 +21,26 @@ export const presenceState = {
 	get online() { void _version; return _online; },
 };
 
-/** Mark nicks as online. */
+/** Mark nicks as online (case-insensitive). */
 export function setOnline(nicks: string[]): void {
 	for (const nick of nicks) {
-		_online.add(nick);
+		_online.add(nick.toLowerCase());
 	}
 	notify();
 }
 
-/** Mark nicks as offline. */
+/** Mark nicks as offline (case-insensitive). */
 export function setOffline(nicks: string[]): void {
 	for (const nick of nicks) {
-		_online.delete(nick);
+		_online.delete(nick.toLowerCase());
 	}
 	notify();
 }
 
-/** Check if a nick is online. */
+/** Check if a nick is online (case-insensitive). */
 export function isOnline(nick: string): boolean {
 	void _version;
-	return _online.has(nick);
+	return _online.has(nick.toLowerCase());
 }
 
 /** Reset all presence state. */

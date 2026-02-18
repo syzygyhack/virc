@@ -64,17 +64,21 @@ loadNotificationLevels();
 
 /** Get the notification level for a channel. Returns 'mentions' (default) if not set. */
 export function getNotificationLevel(channel: string): NotificationLevel {
-	return notificationLevels.get(channel) ?? 'mentions';
+	// Touch _version so Svelte tracks this as a reactive dependency
+	void _version;
+	return notificationLevels.get(channel.toLowerCase()) ?? 'mentions';
 }
 
 /** Set the notification level for a channel. Setting to 'mentions' removes the override. */
 export function setNotificationLevel(channel: string, level: NotificationLevel): void {
+	const key = channel.toLowerCase();
 	if (level === 'mentions') {
-		notificationLevels.delete(channel);
+		notificationLevels.delete(key);
 	} else {
-		notificationLevels.set(channel, level);
+		notificationLevels.set(key, level);
 	}
 	saveNotificationLevels();
+	notify();
 }
 
 /** Returns true if the channel is muted (notification level is 'mute'). */
@@ -88,6 +92,7 @@ export function resetNotificationLevels(): void {
 	if (hasLocalStorage()) {
 		localStorage.removeItem(NOTIFICATION_LEVELS_KEY);
 	}
+	notify();
 }
 
 /**
@@ -106,14 +111,15 @@ export const notificationState = {
 };
 
 function ensureChannel(channel: string): ChannelNotification {
-	if (!_channels.has(channel)) {
-		_channels.set(channel, {
+	const key = channel.toLowerCase();
+	if (!_channels.has(key)) {
+		_channels.set(key, {
 			unreadCount: 0,
 			mentionCount: 0,
 			lastReadMsgid: null,
 		});
 	}
-	return _channels.get(channel)!;
+	return _channels.get(key)!;
 }
 
 /**
@@ -155,19 +161,19 @@ export function markRead(channel: string, msgid: string): void {
 /** Get the unread message count for a channel. Returns 0 if not tracked. */
 export function getUnreadCount(channel: string): number {
 	void _version;
-	return _channels.get(channel)?.unreadCount ?? 0;
+	return _channels.get(channel.toLowerCase())?.unreadCount ?? 0;
 }
 
 /** Get the mention count for a channel. Returns 0 if not tracked. */
 export function getMentionCount(channel: string): number {
 	void _version;
-	return _channels.get(channel)?.mentionCount ?? 0;
+	return _channels.get(channel.toLowerCase())?.mentionCount ?? 0;
 }
 
 /** Get the last read message ID for a channel. Returns null if not set. */
 export function getLastReadMsgid(channel: string): string | null {
 	void _version;
-	return _channels.get(channel)?.lastReadMsgid ?? null;
+	return _channels.get(channel.toLowerCase())?.lastReadMsgid ?? null;
 }
 
 /** Set the last read message ID without resetting counts (e.g. from server sync). */

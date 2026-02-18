@@ -14,6 +14,15 @@ import { hasLocalStorage } from '$lib/utils/storage';
 
 const MAX_MESSAGES_PER_CHANNEL = 500;
 
+/**
+ * Normalize a channel/nick target for use as a Map key.
+ * IRC channel names and nicks are case-insensitive, so we lowercase
+ * for storage while preserving original casing in Message.target for display.
+ */
+function normalizeTarget(target: string): string {
+	return target.toLowerCase();
+}
+
 export type MessageType = 'privmsg' | 'join' | 'part' | 'quit' | 'nick' | 'mode';
 export type SendState = 'sending' | 'sent' | 'failed';
 
@@ -63,7 +72,7 @@ function loadPinnedMessages(): void {
 		if (!raw) return;
 		const data = JSON.parse(raw) as Record<string, string[]>;
 		for (const [channel, msgids] of Object.entries(data)) {
-			pinnedMessages.set(channel, new Set(msgids));
+			pinnedMessages.set(normalizeTarget(channel), new Set(msgids));
 		}
 	} catch {
 		// Corrupted data — ignore
@@ -97,22 +106,22 @@ function notify(): void {
 	_version++;
 }
 
-/** Ensure a channel buffer and cursors entry exist. */
-function ensureChannel(target: string): void {
-	if (!channelMessages.has(target)) {
-		channelMessages.set(target, []);
+/** Ensure a channel buffer and cursors entry exist. Key is already normalized. */
+function ensureChannel(key: string): void {
+	if (!channelMessages.has(key)) {
+		channelMessages.set(key, []);
 	}
-	if (!channelCursors.has(target)) {
-		channelCursors.set(target, { oldestMsgid: null, newestMsgid: null });
+	if (!channelCursors.has(key)) {
+		channelCursors.set(key, { oldestMsgid: null, newestMsgid: null });
 	}
 }
 
-/** Update cursors after adding messages. */
-function updateCursors(target: string): void {
-	const msgs = channelMessages.get(target);
+/** Update cursors after adding messages. Key is already normalized. */
+function updateCursors(key: string): void {
+	const msgs = channelMessages.get(key);
 	if (!msgs || msgs.length === 0) return;
 
-	const cursors = channelCursors.get(target)!;
+	const cursors = channelCursors.get(key)!;
 	cursors.oldestMsgid = msgs[0].msgid;
 	cursors.newestMsgid = msgs[msgs.length - 1].msgid;
 }
@@ -127,8 +136,9 @@ export function generateLocalMsgid(): string {
 
 /** Add a message to a channel buffer, evicting the oldest if over capacity. */
 export function addMessage(target: string, msg: Message): void {
-	ensureChannel(target);
-	const msgs = channelMessages.get(target)!;
+	const key = normalizeTarget(target);
+	ensureChannel(key);
+	const msgs = channelMessages.get(key)!;
 	msgs.push(msg);
 
 	if (msgs.length > MAX_MESSAGES_PER_CHANNEL) {
@@ -139,7 +149,7 @@ export function addMessage(target: string, msg: Message): void {
 		}
 	}
 
-	updateCursors(target);
+	updateCursors(key);
 	notify();
 }
 
@@ -149,7 +159,7 @@ export function addMessage(target: string, msg: Message): void {
  * Returns true if a replacement was made.
  */
 export function replaceOptimisticMessage(target: string, echoMsg: Message): boolean {
-	const msgs = channelMessages.get(target);
+	const msgs = channelMessages.get(normalizeTarget(target));
 	if (!msgs) return false;
 
 	// Find the oldest pending optimistic message from this nick with the same text
@@ -162,7 +172,7 @@ export function replaceOptimisticMessage(target: string, echoMsg: Message): bool
 		) {
 			// Replace with server-confirmed message
 			msgs[i] = echoMsg;
-			updateCursors(target);
+			updateCursors(normalizeTarget(target));
 			notify();
 			return true;
 		}
@@ -174,7 +184,7 @@ export function replaceOptimisticMessage(target: string, echoMsg: Message): bool
 export function getMessage(target: string, msgid: string): Message | null {
 	// Touch _version so Svelte tracks this as a reactive dependency
 	void _version;
-	const msgs = channelMessages.get(target);
+	const msgs = channelMessages.get(normalizeTarget(target));
 	if (!msgs) return null;
 	return msgs.find((m) => m.msgid === msgid) ?? null;
 }
@@ -186,7 +196,7 @@ export function getMessage(target: string, msgid: string): Message | null {
 export function getMessages(target: string): Message[] {
 	// Touch _version so Svelte tracks this as a reactive dependency
 	void _version;
-	return channelMessages.get(target) ?? [];
+	return channelMessages.get(normalizeTarget(target)) ?? [];
 }
 
 /** Mark a message as redacted by msgid. */
@@ -270,8 +280,9 @@ export function removeReaction(
  * At this scale the allocation is sub-millisecond and not a bottleneck.
  */
 export function prependMessages(target: string, msgs: Message[]): void {
-	ensureChannel(target);
-	const existing = channelMessages.get(target)!;
+	const key = normalizeTarget(target);
+	ensureChannel(key);
+	const existing = channelMessages.get(key)!;
 	const combined = [...msgs, ...existing];
 
 	if (combined.length > MAX_MESSAGES_PER_CHANNEL) {
@@ -279,8 +290,8 @@ export function prependMessages(target: string, msgs: Message[]): void {
 		combined.length = MAX_MESSAGES_PER_CHANNEL;
 	}
 
-	channelMessages.set(target, combined);
-	updateCursors(target);
+	channelMessages.set(key, combined);
+	updateCursors(key);
 	notify();
 }
 
@@ -289,16 +300,17 @@ export function prependMessages(target: string, msgs: Message[]): void {
  * Evicts from the beginning if the total exceeds the max capacity.
  */
 export function appendMessages(target: string, msgs: Message[]): void {
-	ensureChannel(target);
-	const existing = channelMessages.get(target)!;
+	const key = normalizeTarget(target);
+	ensureChannel(key);
+	const existing = channelMessages.get(key)!;
 	const combined = [...existing, ...msgs];
 
 	if (combined.length > MAX_MESSAGES_PER_CHANNEL) {
 		combined.splice(0, combined.length - MAX_MESSAGES_PER_CHANNEL);
 	}
 
-	channelMessages.set(target, combined);
-	updateCursors(target);
+	channelMessages.set(key, combined);
+	updateCursors(key);
 	notify();
 }
 
@@ -306,13 +318,14 @@ export function appendMessages(target: string, msgs: Message[]): void {
 export function getCursors(target: string): ChannelCursors {
 	// Touch _version for reactivity
 	void _version;
-	return channelCursors.get(target) ?? { oldestMsgid: null, newestMsgid: null };
+	return channelCursors.get(normalizeTarget(target)) ?? { oldestMsgid: null, newestMsgid: null };
 }
 
 /** Clear all messages for a channel. Also prunes edit map entries for that channel. */
 export function clearChannel(target: string): void {
+	const key = normalizeTarget(target);
 	// Prune edit map entries for messages in this channel before deleting
-	const msgs = channelMessages.get(target);
+	const msgs = channelMessages.get(key);
 	if (msgs) {
 		const msgids = new Set(msgs.map((m) => m.msgid));
 		for (const [originalId] of editMap) {
@@ -321,8 +334,8 @@ export function clearChannel(target: string): void {
 			}
 		}
 	}
-	channelMessages.delete(target);
-	channelCursors.delete(target);
+	channelMessages.delete(key);
+	channelCursors.delete(key);
 	notify();
 }
 
@@ -350,17 +363,18 @@ export function notifyHistoryBatchComplete(target?: string): void {
 
 /** Pin a message in a channel. */
 export function pinMessage(target: string, msgid: string): void {
-	if (!pinnedMessages.has(target)) {
-		pinnedMessages.set(target, new Set());
+	const key = normalizeTarget(target);
+	if (!pinnedMessages.has(key)) {
+		pinnedMessages.set(key, new Set());
 	}
-	pinnedMessages.get(target)!.add(msgid);
+	pinnedMessages.get(key)!.add(msgid);
 	savePinnedMessages();
 	notify();
 }
 
 /** Unpin a message in a channel. */
 export function unpinMessage(target: string, msgid: string): void {
-	const pinned = pinnedMessages.get(target);
+	const pinned = pinnedMessages.get(normalizeTarget(target));
 	if (!pinned) return;
 	pinned.delete(msgid);
 	if (pinned.size === 0) {
@@ -374,14 +388,14 @@ export function unpinMessage(target: string, msgid: string): void {
 export function getPinnedMessages(target: string): Set<string> {
 	// Touch _version for reactivity
 	void _version;
-	return pinnedMessages.get(target) ?? new Set();
+	return pinnedMessages.get(normalizeTarget(target)) ?? new Set();
 }
 
 /** Check if a message is pinned in a channel. */
 export function isPinned(target: string, msgid: string): boolean {
 	// Touch _version for reactivity
 	void _version;
-	return pinnedMessages.get(target)?.has(msgid) ?? false;
+	return pinnedMessages.get(normalizeTarget(target))?.has(msgid) ?? false;
 }
 
 /**
@@ -394,6 +408,8 @@ export function isPinned(target: string, msgid: string): boolean {
  * Returns matching messages in buffer order.
  */
 export function searchMessages(defaultChannel: string, query: string): Message[] {
+	// Touch _version so Svelte tracks this as a reactive dependency
+	void _version;
 	const trimmed = query.trim();
 	if (!trimmed) return [];
 
@@ -413,7 +429,7 @@ export function searchMessages(defaultChannel: string, query: string): Message[]
 	}
 
 	const textQuery = textParts.join(' ').toLowerCase();
-	const msgs = channelMessages.get(channel);
+	const msgs = channelMessages.get(normalizeTarget(channel));
 	if (!msgs) return [];
 
 	return msgs.filter((m) => {

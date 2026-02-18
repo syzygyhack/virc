@@ -31,7 +31,7 @@ export function updateMonitorForChannel(conn: IRCConnection | null, channel: str
 	if (!chInfo) return;
 
 	const currentNicks = new Set(chInfo.members.keys());
-	const ownNick = userState.nick;
+	const ownNick = userState.nick?.toLowerCase() ?? null;
 	if (ownNick) currentNicks.delete(ownNick);
 
 	// Build the full set of nicks that should be monitored:
@@ -45,7 +45,7 @@ export function updateMonitorForChannel(conn: IRCConnection | null, channel: str
 		}
 	}
 	for (const dm of channelUIState.dmConversations) {
-		allNeeded.add(dm.nick);
+		allNeeded.add(dm.nick.toLowerCase());
 	}
 
 	// Add nicks from active channel not yet monitored
@@ -73,5 +73,5 @@ export function clearMonitoredNicks(): void {
 
 /** Add nicks to the monitored set (used by connection lifecycle). */
 export function addMonitoredNicks(nicks: string[]): void {
-	for (const n of nicks) monitoredNicks.add(n);
+	for (const n of nicks) monitoredNicks.add(n.toLowerCase());
 }

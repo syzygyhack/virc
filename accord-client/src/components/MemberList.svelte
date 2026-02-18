@@ -112,7 +112,7 @@
 	let totalMembers = $derived.by((): number => {
 		const channel = channelUIState.activeChannel;
 		if (!channel) return 0;
-		const map = memberState.channels.get(channel);
+		const map = memberState.channels.get(channel.toLowerCase());
 		return map ? map.size : 0;
 	});
 

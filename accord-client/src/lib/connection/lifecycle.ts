@@ -25,6 +25,7 @@ import {
 	setActiveChannel,
 	setCategories,
 	isDMTarget,
+	restoreDMConversations,
 } from '$lib/state/channels.svelte';
 import { addServer } from '$lib/state/servers.svelte';
 import { getCursors } from '$lib/state/messages.svelte';
@@ -237,6 +238,14 @@ export async function initConnection(callbacks: LifecycleCallbacks): Promise<voi
 		// 5. Fetch and apply accord.json
 		const config = filesUrl ? await fetchAccordConfig(filesUrl) : null;
 		const { firstChannel } = applyConfig(conn, config, serverUrl, filesUrl, callbacks);
+
+		// 5b. Restore persisted DM conversations and MONITOR their nicks
+		restoreDMConversations();
+		const dmNicks = channelUIState.dmConversations.map((dm) => dm.nick);
+		if (dmNicks.length > 0) {
+			monitor(conn, '+', dmNicks);
+			callbacks.addMonitoredNicks(dmNicks);
+		}
 
 		// 6. Set first text channel as active
 		if (firstChannel) {

@@ -8,7 +8,10 @@
 import { getCustomEmojiMap } from '$lib/emoji';
 import { URL_PATTERN_SOURCE } from '$lib/constants';
 
-// mIRC color palette (indices 0-15)
+// mIRC color palette (indices 0-98)
+// 0-15: standard mIRC colors
+// 16-87: 6×6×6 color cube (same as xterm-256 indices 16-87)
+// 88-98: greyscale ramp
 const MIRC_COLORS: string[] = [
 	'#ffffff', // 0  white
 	'#000000', // 1  black
@@ -26,6 +29,22 @@ const MIRC_COLORS: string[] = [
 	'#ff00ff', // 13 pink
 	'#7f7f7f', // 14 grey
 	'#d2d2d2', // 15 light grey
+	// 16-87: 6×6×6 color cube
+	'#470000', '#472100', '#474700', '#324700', '#004700', '#00472c',
+	'#004747', '#002747', '#000047', '#2e0047', '#470047', '#47002a',
+	'#740000', '#743a00', '#747400', '#517400', '#007400', '#007449',
+	'#007474', '#004074', '#000074', '#4b0074', '#740074', '#740045',
+	'#b50000', '#b56300', '#b5b500', '#7db500', '#00b500', '#00b571',
+	'#00b5b5', '#0063b5', '#0000b5', '#7500b5', '#b500b5', '#b5006b',
+	'#ff0000', '#ff8c00', '#ffff00', '#b2ff00', '#00ff00', '#00ffa0',
+	'#00ffff', '#008cff', '#0000ff', '#a500ff', '#ff00ff', '#ff0098',
+	'#ff5959', '#ffb459', '#ffff71', '#cfff60', '#6fff6f', '#65ffc9',
+	'#6dffff', '#59b4ff', '#5959ff', '#c459ff', '#ff66ff', '#ff59bc',
+	'#ff9c9c', '#ffd39c', '#ffff9c', '#e2ff9c', '#9cff9c', '#9cffdb',
+	'#9cffff', '#9cd3ff', '#9c9cff', '#dc9cff', '#ff9cff', '#ff94d3',
+	// 88-98: greyscale ramp
+	'#000000', '#131313', '#282828', '#363636', '#4d4d4d', '#656565',
+	'#818181', '#9f9f9f', '#bcbcbc', '#e2e2e2', '#ffffff',
 ];
 
 // Control characters
@@ -55,7 +74,7 @@ function escapeHTML(text: string): string {
 /**
  * Convert mIRC formatting codes to HTML.
  *
- * Handles bold, italic, underline, strikethrough, monospace, color (0-15),
+ * Handles bold, italic, underline, strikethrough, monospace, color (0-98),
  * and reset. Unclosed tags are closed at end of string.
  */
 export function renderIRC(text: string): string {
@@ -201,13 +220,13 @@ export function renderIRC(text: string): string {
 				const fg = parseInt(fgStr, 10);
 
 				let style = '';
-				if (fg >= 0 && fg <= 15) {
+				if (fg >= 0 && fg < MIRC_COLORS.length) {
 					style = `color:${MIRC_COLORS[fg]}`;
 				}
 
-				// Check for background color
-				if (i < text.length && text[i] === ',') {
-					i++; // skip comma
+				// Check for background color — only consume comma if digits follow
+				if (i < text.length && text[i] === ',' && i + 1 < text.length && /\d/.test(text[i + 1])) {
+					i++; // skip comma (confirmed digit follows)
 					if (i < text.length && /\d/.test(text[i])) {
 						let bgStr = text[i];
 						i++;
@@ -216,7 +235,7 @@ export function renderIRC(text: string): string {
 							i++;
 						}
 						const bg = parseInt(bgStr, 10);
-						if (bg >= 0 && bg <= 15) {
+						if (bg >= 0 && bg < MIRC_COLORS.length) {
 							style += `;background-color:${MIRC_COLORS[bg]}`;
 						}
 					}

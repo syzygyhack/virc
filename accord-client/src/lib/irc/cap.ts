@@ -106,7 +106,11 @@ export function negotiateCaps(conn: IRCConnection): Promise<string[]> {
 				const acked = parseCapList(ackString);
 
 				if (subcommand === 'NAK') {
-					settle(() => reject(new Error(`CAP REQ rejected: ${ackString}`)));
+					// Server rejected the REQ. Resolve with empty list instead of
+					// failing the entire connection — the client can proceed with
+					// reduced functionality (e.g. no message-tags or echo-message).
+					console.warn(`[IRC] CAP REQ NAK'd: ${ackString}`);
+					settle(() => resolve([]));
 					return;
 				}
 

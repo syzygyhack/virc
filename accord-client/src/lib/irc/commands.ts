@@ -2,6 +2,14 @@ import type { IRCConnection } from './connection';
 import { formatMessage } from './parser';
 
 /**
+ * Validate an IRC nick: 1-20 characters, no spaces, control chars, or
+ * characters with special IRC meaning (,:*?@!).
+ */
+export function isValidNick(nick: string): boolean {
+	return /^[^\s\x00-\x1f,:*?@!]{1,20}$/.test(nick);
+}
+
+/**
  * Escape a tag value per IRCv3 message-tags spec.
  * Characters that must be escaped: \ ; SPACE CR LF
  */
@@ -113,9 +121,7 @@ export function redact(
  */
 export function topic(conn: IRCConnection, channel: string, newTopic?: string): void {
 	if (newTopic !== undefined) {
-		// formatMessage doesn't handle empty trailing params correctly,
-		// so we always use trailing syntax for topic setting.
-		conn.send(`TOPIC ${channel} :${newTopic}`);
+		conn.send(formatMessage('TOPIC', channel, newTopic));
 	} else {
 		conn.send(formatMessage('TOPIC', channel));
 	}

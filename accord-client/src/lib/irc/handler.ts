@@ -60,6 +60,7 @@ import {
 	setPresenceOffline,
 	getMember as getRichMember,
 	updateMemberModes,
+	updateMemberAccount,
 } from '../state/members.svelte';
 
 /**
@@ -94,7 +95,7 @@ function getMentionRegex(account: string): RegExp | null {
 	if (account !== _mentionAccount) {
 		_mentionAccount = account;
 		const escaped = account.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-		_mentionRegex = new RegExp(`\\b@${escaped}\\b`, 'i');
+		_mentionRegex = new RegExp(`(?:^|\\s)@${escaped}\\b`, 'i');
 	}
 	return _mentionRegex;
 }
@@ -302,6 +303,9 @@ export function handleMessage(parsed: ParsedMessage): void {
 			break;
 		case '354': // RPL_WHOSPCRPL (WHOX)
 			handleWhoxReply(parsed);
+			break;
+		case 'ACCOUNT':
+			handleAccount(parsed);
 			break;
 		case 'AWAY':
 			handleAway(parsed);
@@ -561,8 +565,8 @@ function handleNick(parsed: ParsedMessage): void {
 		addMessage(channel, msg);
 	}
 
-	// Update own nick if it's us
-	if (userState.nick === oldNick) {
+	// Update own nick if it's us (case-insensitive — IRC nicks are case-insensitive)
+	if (userState.nick?.toLowerCase() === oldNick.toLowerCase()) {
 		userState.nick = newNick;
 	}
 }
@@ -633,7 +637,7 @@ function handleMode(parsed: ParsedMessage): void {
 			// Update simple channel member prefix
 			const ch = getChannel(channel);
 			if (ch) {
-				const simpleMember = ch.members.get(targetNick);
+				const simpleMember = ch.members.get(targetNick.toLowerCase());
 				if (simpleMember) {
 					if (adding) {
 						if (!simpleMember.prefix.includes(prefix)) {
@@ -882,12 +886,28 @@ function handleWhoxReply(parsed: ParsedMessage): void {
 
 	// Update account field directly, then use updatePresence for reactivity
 	for (const map of richMemberState.channels.values()) {
-		const member = map.get(nick);
+		const member = map.get(nick.toLowerCase());
 		if (member && resolvedAccount) {
 			member.account = resolvedAccount;
 		}
 	}
 	updatePresence(nick, isAway);
+}
+
+/**
+ * Handle ACCOUNT (account-notify cap).
+ * :nick!user@host ACCOUNT accountname  — user logged in
+ * :nick!user@host ACCOUNT *            — user logged out
+ */
+function handleAccount(parsed: ParsedMessage): void {
+	const nick = parsed.source?.nick ?? '';
+	if (!nick) return;
+	const account = parsed.params[0] ?? '*';
+	const resolvedAccount = account === '*' ? '' : account;
+
+	// Update account field in rich member state across all channels.
+	// Uses updateMemberAccount which calls notify() to trigger Svelte reactivity.
+	updateMemberAccount(nick, resolvedAccount);
 }
 
 /**

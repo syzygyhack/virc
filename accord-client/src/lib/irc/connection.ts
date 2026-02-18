@@ -43,9 +43,13 @@ export class IRCConnection {
 
 	/**
 	 * Open a WebSocket connection. Resolves when the connection is open.
-	 * Rejects if the connection fails before opening.
+	 * Rejects if the connection fails before opening, or if a connection
+	 * is already in progress.
 	 */
 	connect(): Promise<void> {
+		if (this.state === 'connecting' || this.state === 'connected') {
+			return Promise.reject(new Error(`Cannot connect: already ${this.state}`));
+		}
 		return new Promise<void>((resolve, reject) => {
 			this.intentionalClose = false;
 			this.state = 'connecting';
@@ -117,7 +121,12 @@ export class IRCConnection {
 		if (appSettings.showRawIrc) {
 			pushRawLine('out', safe);
 		}
-		this.ws.send(safe + '\r\n');
+		try {
+			this.ws.send(safe + '\r\n');
+		} catch {
+			// WebSocket transitioned to CLOSING/CLOSED between readyState check and send
+			return false;
+		}
 		return true;
 	}
 
@@ -164,7 +173,10 @@ export class IRCConnection {
 	private emit<E extends EventName>(event: E, ...args: Parameters<IRCEventMap[E]>): void {
 		const handlers = this.listeners.get(event);
 		if (handlers) {
-			for (const h of handlers) {
+			// Snapshot the array so handlers that call off() during iteration
+			// don't cause the next handler to be skipped.
+			const snapshot = [...handlers];
+			for (const h of snapshot) {
 				try {
 					(h as (...a: Parameters<IRCEventMap[E]>) => void)(...args);
 				} catch (err) {

@@ -30,10 +30,10 @@
         "default-src": "'self'",
         "script-src": "'self' 'unsafe-inline'",
         "style-src": "'self' 'unsafe-inline'",
-        "img-src": "'self' blob: data:",
+        "img-src": "'self' blob: data: http: https:",
         "font-src": "'self' data:",
         "connect-src": "ipc: http://ipc.localhost ws: wss: http: https:",
-        "media-src": "'self' blob:",
+        "media-src": "'self' blob: http: https:",
         "frame-src": "isolation: 'self'",
         "object-src": "'none'",
         "base-uri": "'self'"

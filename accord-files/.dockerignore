@@ -4,4 +4,3 @@ tests/
 .git
 .gitignore
 tsconfig.json
-bun.lock

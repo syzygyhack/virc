@@ -12,6 +12,7 @@ import {
 	redact,
 	topic,
 	escapeTagValue,
+	isValidNick,
 } from './commands';
 import type { IRCConnection } from './connection';
 
@@ -225,6 +226,66 @@ describe('IRC command helpers', () => {
 			topic(conn, '#test', '');
 			// Empty string starts with ':' via formatMessage trailing logic
 			expect(sent).toEqual(['TOPIC #test :']);
+		});
+	});
+
+	describe('isValidNick', () => {
+		it('accepts valid nicks', () => {
+			expect(isValidNick('alice')).toBe(true);
+			expect(isValidNick('Bob123')).toBe(true);
+			expect(isValidNick('a')).toBe(true);
+			expect(isValidNick('nick-with-dash')).toBe(true);
+			expect(isValidNick('nick_underscore')).toBe(true);
+		});
+
+		it('rejects empty string', () => {
+			expect(isValidNick('')).toBe(false);
+		});
+
+		it('accepts 20-character nick (max length)', () => {
+			expect(isValidNick('a'.repeat(20))).toBe(true);
+		});
+
+		it('rejects 21-character nick (over max)', () => {
+			expect(isValidNick('a'.repeat(21))).toBe(false);
+		});
+
+		it('rejects nicks with spaces', () => {
+			expect(isValidNick('nick name')).toBe(false);
+		});
+
+		it('rejects nicks with control characters', () => {
+			expect(isValidNick('nick\x00')).toBe(false);
+			expect(isValidNick('nick\x1f')).toBe(false);
+			expect(isValidNick('\x01nick')).toBe(false);
+		});
+
+		it('rejects nicks with comma', () => {
+			expect(isValidNick('nick,name')).toBe(false);
+		});
+
+		it('rejects nicks with colon', () => {
+			expect(isValidNick('nick:name')).toBe(false);
+		});
+
+		it('rejects nicks with asterisk', () => {
+			expect(isValidNick('nick*')).toBe(false);
+		});
+
+		it('rejects nicks with question mark', () => {
+			expect(isValidNick('nick?')).toBe(false);
+		});
+
+		it('rejects nicks with at sign', () => {
+			expect(isValidNick('nick@host')).toBe(false);
+		});
+
+		it('rejects nicks with exclamation mark', () => {
+			expect(isValidNick('nick!user')).toBe(false);
+		});
+
+		it('accepts Unicode characters', () => {
+			expect(isValidNick('ünïcödé')).toBe(true);
 		});
 	});
 });

@@ -295,6 +295,100 @@ describe('IRCConnection', () => {
 		});
 	});
 
+	describe('send security', () => {
+		it('strips CR/LF to prevent IRC command injection', async () => {
+			const conn = new IRCConnection({ url: 'ws://localhost:8097' });
+			const connectPromise = conn.connect();
+			latestMockWs().simulateOpen();
+			await connectPromise;
+
+			conn.send('PRIVMSG #test :hello\r\nQUIT :injected');
+			expect(latestMockWs().sentData).toEqual(['PRIVMSG #test :helloQUIT :injected\r\n']);
+		});
+
+		it('strips lone CR from outgoing messages', async () => {
+			const conn = new IRCConnection({ url: 'ws://localhost:8097' });
+			const connectPromise = conn.connect();
+			latestMockWs().simulateOpen();
+			await connectPromise;
+
+			conn.send('PRIVMSG #test :line1\rline2');
+			expect(latestMockWs().sentData).toEqual(['PRIVMSG #test :line1line2\r\n']);
+		});
+
+		it('strips lone LF from outgoing messages', async () => {
+			const conn = new IRCConnection({ url: 'ws://localhost:8097' });
+			const connectPromise = conn.connect();
+			latestMockWs().simulateOpen();
+			await connectPromise;
+
+			conn.send('PRIVMSG #test :line1\nline2');
+			expect(latestMockWs().sentData).toEqual(['PRIVMSG #test :line1line2\r\n']);
+		});
+
+		it('returns false when WebSocket is not open', () => {
+			const conn = new IRCConnection({ url: 'ws://localhost:8097' });
+			// Not connected yet — send should return false
+			expect(conn.send('PING :test')).toBe(false);
+		});
+
+		it('returns false after disconnect', async () => {
+			const conn = new IRCConnection({ url: 'ws://localhost:8097' });
+			const connectPromise = conn.connect();
+			latestMockWs().simulateOpen();
+			await connectPromise;
+
+			conn.disconnect();
+			expect(conn.send('PING :test')).toBe(false);
+		});
+
+		it('returns true on successful send', async () => {
+			const conn = new IRCConnection({ url: 'ws://localhost:8097' });
+			const connectPromise = conn.connect();
+			latestMockWs().simulateOpen();
+			await connectPromise;
+
+			expect(conn.send('PING :test')).toBe(true);
+		});
+	});
+
+	describe('connect timeout', () => {
+		it('rejects after 10s if server never responds', async () => {
+			const conn = new IRCConnection({ url: 'ws://localhost:8097' });
+			const connectPromise = conn.connect();
+
+			// Attach rejection handler before advancing timers to prevent unhandled rejection
+			const rejection = connectPromise.then(() => null, (e: Error) => e);
+
+			// Advance past the 10s timeout
+			await vi.advanceTimersByTimeAsync(10_000);
+
+			const err = await rejection;
+			expect(err).toBeInstanceOf(Error);
+			expect(err!.message).toContain('timed out');
+			// After timeout, onclose triggers scheduleReconnect (auto-reconnect is correct behavior)
+			expect(conn.state).toBe('reconnecting' satisfies ConnectionState);
+			// Cleanly stop reconnect attempts
+			conn.disconnect();
+		});
+
+		it('rejects concurrent connect attempt', async () => {
+			const conn = new IRCConnection({ url: 'ws://localhost:8097' });
+			conn.connect(); // First connect — in progress
+
+			await expect(conn.connect()).rejects.toThrow('already connecting');
+		});
+
+		it('rejects connect when already connected', async () => {
+			const conn = new IRCConnection({ url: 'ws://localhost:8097' });
+			const p = conn.connect();
+			latestMockWs().simulateOpen();
+			await p;
+
+			await expect(conn.connect()).rejects.toThrow('already connected');
+		});
+	});
+
 	describe('event emitter', () => {
 		it('supports multiple handlers for the same event', async () => {
 			const conn = new IRCConnection({ url: 'ws://localhost:8097' });
@@ -323,6 +417,34 @@ describe('IRCConnection', () => {
 
 			latestMockWs().simulateError();
 			expect(errorHandler).toHaveBeenCalled();
+		});
+
+		it('isolates handler errors — one throwing handler does not block others', async () => {
+			const conn = new IRCConnection({ url: 'ws://localhost:8097' });
+			const connectPromise = conn.connect();
+			latestMockWs().simulateOpen();
+			await connectPromise;
+
+			const thrower = () => { throw new Error('handler failure'); };
+			const survivor = vi.fn();
+			conn.on('message', thrower);
+			conn.on('message', survivor);
+
+			latestMockWs().simulateMessage('PING :test\r\n');
+			expect(survivor).toHaveBeenCalledWith('PING :test');
+		});
+
+		it('off() returns true when handler is removed', async () => {
+			const conn = new IRCConnection({ url: 'ws://localhost:8097' });
+			const handler = vi.fn();
+			conn.on('message', handler);
+			expect(conn.off('message', handler)).toBe(true);
+		});
+
+		it('off() returns false when handler was not registered', async () => {
+			const conn = new IRCConnection({ url: 'ws://localhost:8097' });
+			const handler = vi.fn();
+			expect(conn.off('message', handler)).toBe(false);
 		});
 	});
 });

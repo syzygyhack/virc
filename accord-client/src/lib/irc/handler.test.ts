@@ -6,6 +6,8 @@ import {
 	getMessage,
 	getCursors,
 	resetMessages,
+	addMessage,
+	type Message,
 } from '../state/messages.svelte';
 import {
 	channelState,
@@ -33,6 +35,8 @@ import {
 } from '../state/typing.svelte';
 import {
 	getLastReadMsgid,
+	getUnreadCount,
+	getMentionCount,
 	resetNotifications,
 } from '../state/notifications.svelte';
 import { userState } from '../state/user.svelte';
@@ -180,10 +184,10 @@ describe('JOIN handling', () => {
 		handle('@account=alice :alice!a@host JOIN #test');
 		const ch = getChannel('#test');
 		expect(ch).not.toBeNull();
-		// Falls through to params[1] first, which is empty, then tags
-		// Actually params[0] = #test, params[1] doesn't exist for basic JOIN
+		// params[1] is undefined for basic JOIN, falls through to tags['account']
 		const member = ch!.members.get('alice');
 		expect(member).toBeDefined();
+		expect(member!.account).toBe('alice');
 	});
 });
 
@@ -847,5 +851,261 @@ describe('self-PART handling', () => {
 		handle(':me!a@host PART #test');
 		// Messages are cleared entirely, no PART system message
 		expect(getMessages('#test')).toHaveLength(0);
+	});
+});
+
+// -----------------------------------------------------------------------
+// KICK handling
+// -----------------------------------------------------------------------
+
+describe('KICK handling', () => {
+	it('removes kicked user from channel', () => {
+		handle(':alice!a@host JOIN #test alice :Alice');
+		handle(':bob!b@host JOIN #test bob :Bob');
+		handle(':alice!a@host KICK #test bob :misbehaving');
+		expect(getChannel('#test')!.members.has('bob')).toBe(false);
+		expect(getMember('#test', 'bob')).toBeNull();
+	});
+
+	it('adds system message for kicked user', () => {
+		handle(':alice!a@host JOIN #test alice :Alice');
+		handle(':bob!b@host JOIN #test bob :Bob');
+		handle(':alice!a@host KICK #test bob :spam');
+		const msgs = getMessages('#test');
+		const kickMsg = msgs.find((m) => m.text.includes('was kicked'));
+		expect(kickMsg).toBeDefined();
+		expect(kickMsg!.text).toContain('bob was kicked by alice');
+		expect(kickMsg!.text).toContain('spam');
+	});
+
+	it('removes channel on self-kick', () => {
+		userState.nick = 'me';
+		setCategories([{ name: 'Text', channels: ['#other', '#test'] }]);
+		handle(':me!a@host JOIN #test me :Me');
+		handle(':me!a@host JOIN #other me :Me');
+		setActiveChannel('#test');
+		handle(':op!o@host KICK #test me :bye');
+		expect(getChannel('#test')).toBeNull();
+		expect(getMessages('#test')).toHaveLength(0);
+		// Should switch to first available text channel
+		expect(getActiveChannel()).toBe('#other');
+	});
+
+	it('does not produce a system message on self-kick', () => {
+		userState.nick = 'me';
+		setCategories([{ name: 'Text', channels: ['#test'] }]);
+		handle(':me!a@host JOIN #test me :Me');
+		handle(':op!o@host KICK #test me :bye');
+		// Messages are cleared entirely on self-kick
+		expect(getMessages('#test')).toHaveLength(0);
+	});
+});
+
+// -----------------------------------------------------------------------
+// ACCOUNT (account-notify) handling
+// -----------------------------------------------------------------------
+
+describe('ACCOUNT handling', () => {
+	it('updates account field when user logs in', () => {
+		handle(':alice!a@host JOIN #test alice :Alice');
+		handle(':alice!a@host ACCOUNT alice_acct');
+		const m = getMember('#test', 'alice');
+		expect(m).not.toBeNull();
+		expect(m!.account).toBe('alice_acct');
+	});
+
+	it('clears account field when user logs out (* sentinel)', () => {
+		handle(':alice!a@host JOIN #test alice :Alice');
+		handle(':alice!a@host ACCOUNT alice_acct');
+		handle(':alice!a@host ACCOUNT *');
+		const m = getMember('#test', 'alice');
+		expect(m!.account).toBe('');
+	});
+
+	it('updates account across all channels', () => {
+		handle(':alice!a@host JOIN #test alice :Alice');
+		handle(':alice!a@host JOIN #other alice :Alice');
+		handle(':alice!a@host ACCOUNT new_acct');
+		expect(getMember('#test', 'alice')!.account).toBe('new_acct');
+		expect(getMember('#other', 'alice')!.account).toBe('new_acct');
+	});
+});
+
+// -----------------------------------------------------------------------
+// RPL_WELCOME (001) handling
+// -----------------------------------------------------------------------
+
+describe('RPL_WELCOME (001) handling', () => {
+	it('updates userState.nick from server-confirmed nick', () => {
+		userState.nick = 'requestedNick';
+		handle(':server 001 actualNick :Welcome to the network');
+		expect(userState.nick).toBe('actualNick');
+	});
+
+	it('does not change nick when it already matches', () => {
+		userState.nick = 'alice';
+		handle(':server 001 alice :Welcome to the network');
+		expect(userState.nick).toBe('alice');
+	});
+});
+
+// -----------------------------------------------------------------------
+// Echo-message deduplication
+// -----------------------------------------------------------------------
+
+describe('echo-message deduplication', () => {
+	beforeEach(() => {
+		userState.nick = 'me';
+	});
+
+	it('replaces optimistic message instead of duplicating', () => {
+		// Add an optimistic placeholder (prefixed with _local_)
+		addMessage('#test', {
+			msgid: '_local_1',
+			nick: 'me',
+			account: 'me',
+			target: '#test',
+			text: 'hello world',
+			time: new Date(),
+			tags: {},
+			reactions: new Map(),
+			isRedacted: false,
+			type: 'privmsg',
+		});
+		expect(getMessages('#test')).toHaveLength(1);
+
+		// Server echoes back with real msgid
+		handle('@msgid=server123;account=me :me!m@host PRIVMSG #test :hello world');
+
+		// Should still be 1 message, not 2
+		const msgs = getMessages('#test');
+		expect(msgs).toHaveLength(1);
+		expect(msgs[0].msgid).toBe('server123');
+	});
+
+	it('adds message normally when no optimistic match exists', () => {
+		handle('@msgid=s1;account=me :me!m@host PRIVMSG #test :no optimistic');
+		expect(getMessages('#test')).toHaveLength(1);
+		expect(getMessages('#test')[0].msgid).toBe('s1');
+	});
+});
+
+// -----------------------------------------------------------------------
+// Unread and mention tracking
+// -----------------------------------------------------------------------
+
+describe('unread and mention tracking', () => {
+	beforeEach(() => {
+		userState.nick = 'me';
+		userState.account = 'myaccount';
+		setActiveChannel('#active');
+	});
+
+	it('increments unread for non-active channel', () => {
+		handle('@msgid=u1;account=alice :alice!a@host PRIVMSG #other :hello');
+		expect(getUnreadCount('#other')).toBeGreaterThan(0);
+	});
+
+	it('does not increment unread for active channel', () => {
+		handle('@msgid=u2;account=alice :alice!a@host PRIVMSG #active :hello');
+		expect(getUnreadCount('#active')).toBe(0);
+	});
+
+	it('does not increment unread for own messages', () => {
+		handle('@msgid=u3;account=me :me!m@host PRIVMSG #other :my own msg');
+		expect(getUnreadCount('#other')).toBe(0);
+	});
+
+	it('marks DMs as mentions', () => {
+		handle('@msgid=u4;account=alice :alice!a@host PRIVMSG me :hey there');
+		expect(getMentionCount('alice')).toBeGreaterThan(0);
+	});
+
+	it('detects @mentions in channel messages', () => {
+		handle('@msgid=u5;account=alice :alice!a@host PRIVMSG #other :hey @myaccount check this');
+		expect(getMentionCount('#other')).toBeGreaterThan(0);
+	});
+
+	it('does not flag non-mentions as mentions', () => {
+		handle('@msgid=u6;account=alice :alice!a@host PRIVMSG #other :hello world');
+		expect(getMentionCount('#other')).toBe(0);
+	});
+});
+
+// -----------------------------------------------------------------------
+// Batch deduplication and append path
+// -----------------------------------------------------------------------
+
+describe('BATCH deduplication', () => {
+	it('deduplicates batch messages against existing buffer', () => {
+		// Add a message that also exists in the batch
+		handle('@msgid=msg1;account=alice;time=2025-01-01T00:00:00Z :alice!a@host PRIVMSG #test :hello');
+
+		// Batch contains the same message plus a new one
+		handle(':server BATCH +ref3 chathistory #test');
+		handle('@batch=ref3;msgid=msg1;account=alice;time=2025-01-01T00:00:00Z :alice!a@host PRIVMSG #test :hello');
+		handle('@batch=ref3;msgid=msg0;account=bob;time=2024-12-31T23:59:00Z :bob!b@host PRIVMSG #test :older');
+		handle(':server BATCH -ref3');
+
+		const msgs = getMessages('#test');
+		// Should be 2, not 3 — msg1 is deduplicated
+		expect(msgs).toHaveLength(2);
+		expect(msgs[0].msgid).toBe('msg0');
+		expect(msgs[1].msgid).toBe('msg1');
+	});
+
+	it('appends gap-fill messages that are newer than buffer', () => {
+		// Existing message
+		handle('@msgid=old1;account=alice;time=2025-01-01T00:00:00Z :alice!a@host PRIVMSG #test :old');
+
+		// Gap-fill batch with newer messages (AFTER query)
+		handle(':server BATCH +ref4 chathistory #test');
+		handle('@batch=ref4;msgid=new1;account=bob;time=2025-01-01T01:00:00Z :bob!b@host PRIVMSG #test :newer');
+		handle('@batch=ref4;msgid=new2;account=bob;time=2025-01-01T02:00:00Z :bob!b@host PRIVMSG #test :newest');
+		handle(':server BATCH -ref4');
+
+		const msgs = getMessages('#test');
+		expect(msgs).toHaveLength(3);
+		// Order: old1 (existing), new1 (appended), new2 (appended)
+		expect(msgs[0].msgid).toBe('old1');
+		expect(msgs[1].msgid).toBe('new1');
+		expect(msgs[2].msgid).toBe('new2');
+	});
+});
+
+// -----------------------------------------------------------------------
+// REDACT within batch
+// -----------------------------------------------------------------------
+
+describe('BATCH with REDACT', () => {
+	it('marks message as redacted within a batch', () => {
+		handle(':server BATCH +ref5 chathistory #test');
+		handle('@batch=ref5;msgid=r1;account=alice;time=2025-01-01T00:00:00Z :alice!a@host PRIVMSG #test :secret');
+		handle('@batch=ref5 :mod!m@host REDACT #test r1');
+		handle(':server BATCH -ref5');
+
+		const msgs = getMessages('#test');
+		expect(msgs).toHaveLength(1);
+		expect(msgs[0].isRedacted).toBe(true);
+		expect(msgs[0].text).toBe('');
+	});
+});
+
+// -----------------------------------------------------------------------
+// +accord/edit within batch
+// -----------------------------------------------------------------------
+
+describe('BATCH with +accord/edit', () => {
+	it('updates original message in batch instead of adding duplicate', () => {
+		handle(':server BATCH +ref6 chathistory #test');
+		handle('@batch=ref6;msgid=orig1;account=alice;time=2025-01-01T00:00:00Z :alice!a@host PRIVMSG #test :typo');
+		handle('@batch=ref6;msgid=edit1;+accord/edit=orig1;account=alice;time=2025-01-01T00:01:00Z :alice!a@host PRIVMSG #test :fixed');
+		handle(':server BATCH -ref6');
+
+		const msgs = getMessages('#test');
+		expect(msgs).toHaveLength(1);
+		expect(msgs[0].msgid).toBe('orig1');
+		expect(msgs[0].text).toBe('fixed');
+		expect(msgs[0].isEdited).toBe(true);
 	});
 });

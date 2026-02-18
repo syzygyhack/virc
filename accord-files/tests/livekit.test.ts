@@ -94,4 +94,160 @@ describe("POST /api/livekit/token", () => {
     }));
     expect(res.status).toBe(401);
   });
+
+  // --- Room name validation ---
+
+  test("returns 400 for room without # or dm: prefix", async () => {
+    const jwt = await createTestJwt("alice");
+    const res = await livekit.fetch(req("/api/livekit/token", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${jwt}`,
+      },
+      body: JSON.stringify({ channel: "general" }),
+    }));
+    expect(res.status).toBe(400);
+    const body = await res.json() as { error: string };
+    expect(body.error).toContain("Invalid room");
+  });
+
+  test("returns 400 for room with control characters", async () => {
+    const jwt = await createTestJwt("alice");
+    const res = await livekit.fetch(req("/api/livekit/token", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${jwt}`,
+      },
+      body: JSON.stringify({ channel: "#test\x00room" }),
+    }));
+    expect(res.status).toBe(400);
+  });
+
+  test("returns 400 for room exceeding 200 characters", async () => {
+    const jwt = await createTestJwt("alice");
+    const longRoom = "#" + "a".repeat(200);
+    const res = await livekit.fetch(req("/api/livekit/token", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${jwt}`,
+      },
+      body: JSON.stringify({ channel: longRoom }),
+    }));
+    expect(res.status).toBe(400);
+  });
+
+  test("returns 400 for empty channel prefix (just #)", async () => {
+    const jwt = await createTestJwt("alice");
+    const res = await livekit.fetch(req("/api/livekit/token", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${jwt}`,
+      },
+      body: JSON.stringify({ channel: "#" }),
+    }));
+    expect(res.status).toBe(400);
+  });
+
+  // --- DM room validation and authorization ---
+
+  test("returns 400 for malformed DM room (wrong number of parts)", async () => {
+    const jwt = await createTestJwt("alice");
+    const res = await livekit.fetch(req("/api/livekit/token", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${jwt}`,
+      },
+      body: JSON.stringify({ channel: "dm:alice" }),
+    }));
+    expect(res.status).toBe(400);
+    const body = await res.json() as { error: string };
+    expect(body.error).toContain("Invalid DM room");
+  });
+
+  test("returns 400 for DM room with too many parts", async () => {
+    const jwt = await createTestJwt("alice");
+    const res = await livekit.fetch(req("/api/livekit/token", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${jwt}`,
+      },
+      body: JSON.stringify({ channel: "dm:alice:bob:charlie" }),
+    }));
+    expect(res.status).toBe(400);
+  });
+
+  test("returns 403 when user is not a participant in DM room", async () => {
+    const jwt = await createTestJwt("alice");
+    const res = await livekit.fetch(req("/api/livekit/token", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${jwt}`,
+      },
+      body: JSON.stringify({ channel: "dm:bob:charlie" }),
+    }));
+    expect(res.status).toBe(403);
+    const body = await res.json() as { error: string };
+    expect(body.error).toContain("Not a participant");
+  });
+
+  test("allows DM room when user is first participant", async () => {
+    const jwt = await createTestJwt("alice");
+    const res = await livekit.fetch(req("/api/livekit/token", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${jwt}`,
+      },
+      body: JSON.stringify({ channel: "dm:alice:bob" }),
+    }));
+    expect(res.status).toBe(200);
+  });
+
+  test("allows DM room when user is second participant", async () => {
+    const jwt = await createTestJwt("alice");
+    const res = await livekit.fetch(req("/api/livekit/token", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${jwt}`,
+      },
+      body: JSON.stringify({ channel: "dm:bob:alice" }),
+    }));
+    expect(res.status).toBe(200);
+  });
+
+  test("DM participant check is case-insensitive", async () => {
+    const jwt = await createTestJwt("alice");
+    const res = await livekit.fetch(req("/api/livekit/token", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${jwt}`,
+      },
+      body: JSON.stringify({ channel: "dm:ALICE:bob" }),
+    }));
+    expect(res.status).toBe(200);
+  });
+
+  test("returns 400 for invalid JSON body", async () => {
+    const jwt = await createTestJwt("alice");
+    const res = await livekit.fetch(req("/api/livekit/token", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${jwt}`,
+      },
+      body: "not json",
+    }));
+    expect(res.status).toBe(400);
+    const body = await res.json() as { error: string };
+    expect(body.error).toContain("Invalid JSON");
+  });
 });

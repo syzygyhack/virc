@@ -152,14 +152,15 @@ describe('negotiateCaps', () => {
 		expect(result).toEqual([]);
 	});
 
-	it('rejects on CAP NAK', async () => {
+	it('resolves with empty list on CAP NAK', async () => {
 		const { conn } = createMockConn();
 		const promise = negotiateCaps(conn);
 
 		conn.simulateMessage(':server CAP * LS :sasl message-tags');
 		conn.simulateMessage(':server CAP * NAK :sasl message-tags');
 
-		await expect(promise).rejects.toThrow('CAP REQ rejected');
+		const result = await promise;
+		expect(result).toEqual([]);
 	});
 
 	it('does not send CAP END', async () => {

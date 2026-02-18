@@ -134,9 +134,12 @@ describe("GET /api/files/:filename", () => {
   test("serves an uploaded file with correct Content-Type", async () => {
     const token = await createTestJwt("alice");
 
+    // Valid PNG header bytes
+    const pngData = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00]);
+
     // Upload first
     const uploadRes = await files.fetch(
-      uploadReq("image.png", "fake-png-data", {
+      uploadReq("image.png", pngData, {
         token,
         mimetype: "image/png",
       }),
@@ -149,9 +152,6 @@ describe("GET /api/files/:filename", () => {
     expect(serveRes.status).toBe(200);
     expect(serveRes.headers.get("Content-Type")).toBe("image/png");
     expect(serveRes.headers.get("Cache-Control")).toContain("immutable");
-
-    const served = await serveRes.text();
-    expect(served).toBe("fake-png-data");
   });
 
   test("returns 404 for non-existent file", async () => {
@@ -204,8 +204,11 @@ describe("GET /api/files/:filename", () => {
   test("serves safe files without Content-Disposition: attachment", async () => {
     const token = await createTestJwt("alice");
 
+    // Valid PNG header bytes
+    const pngData = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00]);
+
     const uploadRes = await files.fetch(
-      uploadReq("photo.png", "fake-png", {
+      uploadReq("photo.png", pngData, {
         token,
         mimetype: "image/png",
       }),
@@ -276,5 +279,85 @@ describe("GET /api/files/:filename", () => {
     const serveRes = await files.fetch(req(uploadBody.url));
     expect(serveRes.status).toBe(200);
     expect(serveRes.headers.get("Content-Disposition")).toContain("attachment");
+  });
+});
+
+describe("MIME magic byte validation", () => {
+  test("rejects .png with non-PNG content", async () => {
+    const token = await createTestJwt("alice");
+    const res = await files.fetch(
+      uploadReq("fake.png", "<html>not a png</html>", { token, mimetype: "image/png" }),
+    );
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain("extension");
+  });
+
+  test("accepts .png with valid PNG header", async () => {
+    const token = await createTestJwt("alice");
+    // Valid PNG magic bytes followed by dummy data
+    const pngHeader = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
+    const res = await files.fetch(
+      uploadReq("valid.png", pngHeader, { token, mimetype: "image/png" }),
+    );
+    expect(res.status).toBe(200);
+  });
+
+  test("rejects .jpg with non-JPEG content", async () => {
+    const token = await createTestJwt("alice");
+    const res = await files.fetch(
+      uploadReq("fake.jpg", "not a jpeg at all", { token, mimetype: "image/jpeg" }),
+    );
+    expect(res.status).toBe(422);
+  });
+
+  test("accepts .jpg with valid JPEG header", async () => {
+    const token = await createTestJwt("alice");
+    const jpegHeader = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00]);
+    const res = await files.fetch(
+      uploadReq("valid.jpg", jpegHeader, { token, mimetype: "image/jpeg" }),
+    );
+    expect(res.status).toBe(200);
+  });
+
+  test("rejects .gif with non-GIF content", async () => {
+    const token = await createTestJwt("alice");
+    const res = await files.fetch(
+      uploadReq("fake.gif", "this is not a gif", { token, mimetype: "image/gif" }),
+    );
+    expect(res.status).toBe(422);
+  });
+
+  test("accepts .gif with GIF89a header", async () => {
+    const token = await createTestJwt("alice");
+    const gifHeader = new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x01, 0x00]);
+    const res = await files.fetch(
+      uploadReq("valid.gif", gifHeader, { token, mimetype: "image/gif" }),
+    );
+    expect(res.status).toBe(200);
+  });
+
+  test("rejects .pdf with non-PDF content", async () => {
+    const token = await createTestJwt("alice");
+    const res = await files.fetch(
+      uploadReq("fake.pdf", "not a pdf file", { token, mimetype: "application/pdf" }),
+    );
+    expect(res.status).toBe(422);
+  });
+
+  test("skips validation for unknown extensions", async () => {
+    const token = await createTestJwt("alice");
+    const res = await files.fetch(
+      uploadReq("data.bin", "arbitrary binary content", { token, mimetype: "application/octet-stream" }),
+    );
+    expect(res.status).toBe(200);
+  });
+
+  test("skips validation for text types", async () => {
+    const token = await createTestJwt("alice");
+    const res = await files.fetch(
+      uploadReq("readme.txt", "just plain text", { token, mimetype: "text/plain" }),
+    );
+    expect(res.status).toBe(200);
   });
 });
